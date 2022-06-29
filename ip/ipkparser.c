@@ -1,5 +1,5 @@
 /*
- * kparser.c	Panda Parser in Kernel
+ * ipkparser.c	KParser CLI 
  *
  *              This program is free software; you can redistribute it and/or
  *              modify it under the terms of the GNU General Public License
@@ -9,26 +9,16 @@
  * Authors:	Pratyush Khan <pratyush@sipanda.io>
  */
 
-#include <stdbool.h>
-#include <linux/types.h>
-
 #include <arpa/inet.h>
-#include <assert.h>
 #include <errno.h>
-#include <linux/kparser.h>
 #include <linux/genetlink.h>
-#include <linux/ip.h>
-#include <netdb.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
+#include <linux/kparser.h>
 #include "libgenl.h"
+
 #include "utils.h"
 #include "ip_common.h"
-#include "json_print.h"
 
-
+extern const struct kparser_global_namespaces *g_namespaces[];
 // TODO:
 // Follow usage format from other places
 // dont use KP, use KPARSER
@@ -53,6 +43,116 @@ static int genl_family = -1;
 
 #define KPARSER_NLM_MAX_LEN 1024
 
+static inline bool parse_cmd_line_key_val_str(int argc, int *argidx,
+		const char *argv[], bool mandatory, const char *key,
+		void *value, size_t value_len, bool *value_err)
+{
+	const char *str_arg_ptr;
+
+	if (!key || !value || value_len == 0) {
+		return false;
+	}
+
+	if (argc == 0 || !argv || !argidx) {
+		if (mandatory)
+			fprintf(stderr, "Key `%s` is missing!\n", key);
+		return false;
+	}
+
+	if (*argidx > (argc - 1)) {
+		*argidx = 0;
+	}
+
+	if (matches(argv[*argidx], key)) {
+		// start scanning from beginning
+		*argidx = 0;
+		while (*argidx <= argc - 1) {
+			if (!argv[*argidx]) {
+				if (mandatory)
+					fprintf(stderr,
+						"Expected Key `%s` notfound!\n",
+						key);
+				return false;
+			}
+			if (matches(argv[*argidx], key) == 0)
+				break;
+			(*argidx)++;
+		}
+	}
+
+	if (*argidx > argc - 1) {
+		// key not ound
+		if (mandatory)
+			fprintf(stderr, "Expected Key `%s` notfound!\n",
+					key);
+		return false;
+	}
+
+	(*argidx)++;
+
+	if (*argidx > (argc - 1) || !argv[*argidx]) {
+		fprintf(stderr, "value for Key `%s` is missing!\n",
+				key);
+		*value_err = true;
+		return false;
+	}
+
+	str_arg_ptr = argv[*argidx];
+	if ((strlen(str_arg_ptr) + 1) > value_len) {
+		fprintf(stderr,
+			"Value `%s` of key `%s` exceeds max len %lu\n",
+			str_arg_ptr, key, value_len);
+		*value_err = true;
+		return false;
+	}
+	(void) strncpy(value, str_arg_ptr, value_len);
+
+	(*argidx)++;
+
+	return true;
+}
+
+static inline bool parse_cmd_line_key_val_ints(int argc, int *argidx,
+		const char *argv[], bool mandatory, const char *key,
+		void *value, size_t value_len, int64_t min, int64_t max,
+		bool *value_err)
+{
+	char arg_val[KPARSER_MAX_U64_STR_LEN];
+	int errno_local;
+	__u64 ret_digit;
+	bool rc;
+
+	if (!key || !value || value_len == 0 ||
+			value_len > sizeof(ret_digit))
+		return false;
+
+	rc = parse_cmd_line_key_val_str(argc, argidx, argv, mandatory, key,
+			arg_val, sizeof(arg_val), value_err);
+	if (!rc || *value_err)
+		return false;
+
+	ret_digit = strtoull(arg_val, NULL, 0);
+	errno_local = errno;
+	if (errno_local == EINVAL || errno_local == ERANGE) {
+		fprintf(stderr, "Expected digit for Key `%s`, val `%s`."
+				"errno: %d in strtoull().Try again.\n",
+				key, arg_val, errno_local);
+		*value_err = true;
+		return false;
+	}
+
+	if ((int64_t)ret_digit > max || (int64_t)ret_digit < min) {
+		fprintf(stderr, "Value %ld for Key `%s` is out of valid "
+				"range. Min: %ld, Max: %ld.\n",
+				(int64_t)ret_digit, key, min, max);
+		*value_err = true;
+		return false;
+	}
+
+	memcpy(value, &ret_digit, value_len);
+
+	return true;
+}
 // TODO: convert these macros to inline fns
 #define PARSE_CMD_LINE_KEY_VAL_STR(key, value, maxlen)			\
 do {									\
@@ -216,54 +316,6 @@ static int32_t exec_cmd(uint8_t cmd, int32_t req_attr, int32_t rsp_attr,
 	return 0;
 }
 
-static int do_create_metadata(int argc, const char **argv)
-{
-	struct kparser_cmd_rsp_hdr cmd_rsp;
-	struct kparser_arg_md cmd_arg;
-	bool optional = false;
-	int32_t argidx = 0;
-	bool parsed;
-	int32_t rc;
-
-	memset(&cmd_arg, 0, sizeof(cmd_arg));
-
-	PARSE_CMD_LINE_HKEY("name", cmd_arg.key.name, "id", cmd_arg.key.id);
-	// use lower case hex numbers
-	PARSE_CMD_LINE_KEY_VAL_U16("soff", cmd_arg.soff, 0, 0xfffe);
-	PARSE_CMD_LINE_KEY_VAL_U16("doff", cmd_arg.doff, 0, 0xfffe);
-	PARSE_CMD_LINE_KEY_VAL_U64("len", cmd_arg.len, 0, 0xffff);
-
-	fprintf(stdout, "%s: key:{%s:%u}, soff:%u doff:%u len:%lu\n",
-			__FUNCTION__, cmd_arg.key.name,cmd_arg.key.id,
-			cmd_arg.soff, cmd_arg.doff, cmd_arg.len);
-
-	rc = exec_cmd(KPARSER_CMD_ADD, KPARSER_ATTR_CREATE_MD,
-			KPARSER_ATTR_CREATE_MD_RSP,
-			&cmd_arg, sizeof(cmd_arg),
-			&cmd_rsp, sizeof(cmd_rsp));
-	if (rc != 0) {
-		fprintf(stderr, "%s:exec_cmd() failed for cmd:%d"
-				" attrs:{req:%d:rsp:%d}, rc:%d\n",
-				__FUNCTION__,
-				KPARSER_CMD_ADD, KPARSER_ATTR_CREATE_MD,
-				KPARSER_ATTR_CREATE_MD_RSP, rc);
-		return rc;
-	}
-
-	fprintf(stdout, "%s:cmd %d executed for attrs:{%d:%d}, op rc:[%d:%s]\n",
-			__FUNCTION__,
-			KPARSER_CMD_ADD, KPARSER_ATTR_CREATE_MD,
-			KPARSER_ATTR_CREATE_MD_RSP,
-			cmd_rsp.op_ret_code, cmd_rsp.err_str_buf);
-	return 0;
-
-einval_out:
-	fprintf(stderr, "%s:cmd %d didn't execute for attrs:{%d:%d}, rc:%d\n",
-			__FUNCTION__,
-			KPARSER_CMD_ADD, KPARSER_ATTR_CREATE_MD,
-			KPARSER_ATTR_CREATE_MD_RSP, rc);
-	return rc;
-}
 
 static int do_create_metadata_list(int argc, const char **argv)
 {
@@ -698,12 +750,250 @@ einval_out:
 	return rc;
 }
 
-static int do_create(int argc, const char **argv)
+static int do_create_update_ns(enum kparser_global_namespace_ids namespace_id,
+		bool create, int argc, int *argidx, const char **argv)
+{
+	const struct kparser_global_namespaces *namespace;
+	const struct kparser_arg_key_val_token *curr_arg;
+	char types_buf[KPARSER_SET_VAL_LEN_MAX];
+	struct kparser_cmd_rsp_hdr cmd_rsp;
+	bool ret = true, value_err = false;
+	struct kparser_config_cmd cmd_arg;
+	const char *key, *dependent_Key;
+	size_t w_offset, w_len;	
+	int other_mandatory_idx;
+	int i, j;
+	int ns_keys_bvs[16];
+	
+	if (namespace_id <= KPARSER_NS_INVALID ||
+			namespace_id >= KPARSER_NS_MAX) {
+		fprintf(stderr, "Invalid namespace id: %u\n", namespace_id);
+		return EINVAL;
+	}
+	namespace = g_namespaces[namespace_id];
+
+	memset(&cmd_arg, 0, sizeof(cmd_arg));
+	cmd_arg.namespace_id = namespace_id;
+	memset(ns_keys_bvs, 0xff, sizeof(ns_keys_bvs));
+
+	for (i = 0; i < namespace->arg_tokens_count; i++) {
+		curr_arg = &namespace->arg_tokens[i];
+
+		key = curr_arg->key_name;
+		w_offset = curr_arg->w_offset;
+		w_len = curr_arg->w_len;
+
+		if (curr_arg->default_template_token )
+			curr_arg = curr_arg->default_template_token;
+
+		if (!key)
+			key = curr_arg->key_name;
+
+		if (!create && curr_arg->immutable)
+			continue;
+
+		printf("processing token key:`%s`\n", key);
+
+		switch (curr_arg->type) {
+		case KPARSER_ARG_VAL_STR:
+			ret = parse_cmd_line_key_val_str(argc, argidx, argv,
+					curr_arg->mandatory, key,
+					((void *) &cmd_arg) + w_offset, w_len,
+					&value_err);
+			if (ret) {
+				ClearBit(ns_keys_bvs, i);
+				break;
+			}
+			if (curr_arg->mandatory || value_err) {
+				fprintf(stderr,
+					"namespace `%s`: "
+					"Failed to parse key:`%s`\n",
+					namespace->name, key);
+				return EINVAL;
+			}
+			memcpy(((void *) &cmd_arg) + w_offset,
+					curr_arg->default_val, w_len);
+			ret = true;
+			break;
+
+		case KPARSER_ARG_VAL_U16:
+		case KPARSER_ARG_VAL_U64:
+			ret = parse_cmd_line_key_val_ints(argc, argidx, argv,
+					curr_arg->mandatory, key,
+					((void *) &cmd_arg) + w_offset, w_len,
+					curr_arg->min_value,
+					curr_arg->max_value, &value_err);
+			if (ret) {
+				ClearBit(ns_keys_bvs, i);
+				break;
+			}
+			if (curr_arg->mandatory || value_err) {
+				fprintf(stderr,
+					"namespace `%s`: "
+					"Failed to parse key:`%s`\n",
+					namespace->name, key);
+				return EINVAL;
+			}
+			memcpy(((void *) &cmd_arg) + w_offset,
+					&curr_arg->def_value, w_len);
+			ret = true;
+			break;
+
+		case KPARSER_ARG_VAL_SET:
+			ret = parse_cmd_line_key_val_str(argc, argidx, argv,
+					curr_arg->mandatory, key,
+					types_buf, sizeof(types_buf),
+					&value_err);
+			if (!ret && (curr_arg->mandatory || value_err)) {
+				fprintf(stderr,
+					"namespace `%s`: "
+					"Failed to parse key:%s\n",
+					namespace->name, key);
+				return EINVAL;
+			}
+			if (!ret) {
+				memcpy(((void *) &cmd_arg) + w_offset,
+					&curr_arg->def_value_enum, w_len);
+				ret = true;
+				break;
+			}
+			for (j = 0; j < curr_arg->value_set_len; j++) {
+				if (matches(types_buf, 
+					curr_arg->value_set[j].set_value_str)
+						== 0) {
+					memcpy(((void *) &cmd_arg) + w_offset,
+						&curr_arg->value_set[j].
+							set_value_enum, w_len);
+					ClearBit(ns_keys_bvs, i);
+					break;
+				}
+			}
+			if (j == curr_arg->value_set_len) {
+				fprintf(stderr,
+					"namespace `%s`: "
+					"Invalid value `%s` for key: `%s`\n",
+					namespace->name, types_buf, key);
+				fprintf(stderr, "\tValid set is: {");
+				for (j = 0; j < curr_arg->value_set_len; j++) {
+					if (j == curr_arg->value_set_len - 1)
+						fprintf(stderr, "%s}\n",
+							curr_arg->value_set[j].
+							set_value_str);
+					else
+						fprintf(stderr, "%s | ",
+							curr_arg->value_set[j].
+							set_value_str);
+
+				}
+				return EINVAL;
+			}
+			break;
+
+		default:
+			printf("here: %d\n", __LINE__);
+			ret = false;
+			break;
+		}
+
+		if (ret == false) {
+			fprintf(stderr, "namespace `%s`: cmdline arg error\n",
+					namespace->name);
+			return EINVAL;
+		}
+	}
+
+	for (i = 0; i < namespace->arg_tokens_count; i++) {
+		curr_arg = &namespace->arg_tokens[i];
+		if (curr_arg->semi_optional == false)
+			continue;
+		other_mandatory_idx = curr_arg->other_mandatory_idx;
+		if (other_mandatory_idx == -1)
+			continue;
+		key = curr_arg->key_name;
+		if (curr_arg->default_template_token )
+			curr_arg = curr_arg->default_template_token;
+		if (!key)
+			key = curr_arg->key_name;
+#if 0
+		printf("%d:I:%d\n", i, TestBit(ns_keys_bvs, i));
+		printf("%d:OM:%d\n", other_mandatory_idx,
+				TestBit(ns_keys_bvs, other_mandatory_idx));
+		printf("dependency check for token key:`%s`, %d\n",
+				key, curr_arg->semi_optional);
+#endif
+
+		if (TestBit(ns_keys_bvs, i) &&
+				TestBit(ns_keys_bvs, other_mandatory_idx)) {
+			dependent_Key = namespace->arg_tokens[
+				other_mandatory_idx].key_name;
+			if (namespace->arg_tokens[other_mandatory_idx].
+					default_template_token)
+				if (!dependent_Key)
+					dependent_Key = namespace->arg_tokens[
+						other_mandatory_idx].
+						default_template_token->key_name;
+			fprintf(stderr, "namespace `%s`: either configure key"
+					" `%s` and/or key `%s`\n",
+					namespace->name, 
+					key, dependent_Key);
+			return EINVAL;
+		}
+	}
+#if 0
+	rc = exec_cmd(KPARSER_CMD_ADD, KPARSER_ATTR_CREATE_MD,
+			KPARSER_ATTR_CREATE_MD_RSP,
+			&cmd_arg, sizeof(cmd_arg),
+			&cmd_rsp, sizeof(cmd_rsp));
+	if (rc != 0) {
+		fprintf(stderr, "%s:exec_cmd() failed for cmd:%d"
+				" attrs:{req:%d:rsp:%d}, rc:%d\n",
+				__FUNCTION__,
+				KPARSER_CMD_ADD, KPARSER_ATTR_CREATE_MD,
+				KPARSER_ATTR_CREATE_MD_RSP, rc);
+		return rc;
+	}
+#endif
+
+	fprintf(stdout, "%s:namespace: %u: cmd_arg dump:\n"
+			"cmd_arg.namespace_id:%u "
+			"cmd_arg.md_conf.key.name:%s "
+			"cmd_arg.md_conf.key.id:%u "
+			"cmd_arg.md_conf.soff:%u\n"
+			"cmd_arg.md_conf.doff:%u "
+			"cmd_arg.md_conf.len:%lu "
+			"cmd_arg.md_conf.type:%u\n"
+			"cmd_arg.md_conf.array_hkey.name:%s "
+			"cmd_arg.md_conf.array_hkey.id:%u "
+			"cmd_arg.md_conf.array_doff:%u "
+			"cmd_arg.md_conf.array_counter_id.name:%s "
+			"cmd_arg.md_conf.array_counter_id.id:%u\n",
+			__FUNCTION__, namespace_id,
+			cmd_arg.namespace_id,
+			cmd_arg.md_conf.key.name,
+			cmd_arg.md_conf.key.id,
+			cmd_arg.md_conf.soff,
+			cmd_arg.md_conf.doff,
+			cmd_arg.md_conf.len,
+			cmd_arg.md_conf.type,
+			cmd_arg.md_conf.array_hkey.name,
+			cmd_arg.md_conf.array_hkey.id,
+			cmd_arg.md_conf.array_doff,
+			cmd_arg.md_conf.array_counter_id.name,
+			cmd_arg.md_conf.array_counter_id.id);
+
+	return 0;
+}
+
+static int do_create_update(bool create, int argc, int *argidx,
+		const char **argv)
 {
 	const char *tk;
 
-	if (argc && matches(*argv, "metadata") == 0)
-		return do_create_metadata(argc-1, argv+1);
+	if (argc && (*argidx <= (argc - 1)) && argv &&
+			matches(argv[*argidx], "metadata") == 0) {
+		(*argidx)++;
+		return do_create_update_ns(md, create, argc, argidx, argv);
+	}
 
 	if (argc && matches(*argv, "metalist") == 0)
 		return do_create_metadata_list(argc-1, argv+1);
@@ -801,6 +1091,8 @@ einval_out:
 
 int do_kparser(int argc, char **argv)
 {
+	int argidx = 0;
+
 	if (argc < 1)
 		usage();
 
@@ -812,8 +1104,14 @@ int do_kparser(int argc, char **argv)
 		exit(-1);
 	}
 
-	if (matches(*argv, "create") == 0)
-		return do_create(argc-1, (const char **) argv+1);
+	if (argc && (argidx <= (argc - 1)) && argv &&
+			((matches(argv[argidx], "create") == 0) ||
+			(matches(argv[argidx], "update") == 0))) {
+		argidx++;
+		return do_create_update(
+				matches(argv[argidx - 1], "create") == 0,
+				argc, &argidx, (const char **) argv);
+	}
 
 	if (matches(*argv, "delete") == 0)
 		return do_delete(argc-1, (const char **) argv+1);

@@ -4,16 +4,104 @@
 #ifndef _LINUX_KPARSER_H
 #define _LINUX_KPARSER_H
 
-#include <linux/types.h>
 #include <linux/string.h>
+#include <linux/types.h>
+#include <stdbool.h>
+
+#define BITS_IN_BYTE	8
+#define BITS_IN_U32	(sizeof(__u32) * BITS_IN_BYTE)
+#define SetBit(A,k)	(A[(k)/BITS_IN_U32] |= (1 << ((k) % BITS_IN_U32)))
+#define ClearBit(A,k)	(A[(k)/BITS_IN_U32] &= ~(1 << ((k) % BITS_IN_U32)))
+#define TestBit(A,k)    (1 & (A[(k)/BITS_IN_U32] >> ((k) % BITS_IN_U32)))
 
 /* NETLINK_GENERIC related info */
-#define KPARSER_GENL_NAME		"kparser"
-#define KPARSER_GENL_VERSION		0x1
+#define KPARSER_GENL_NAME	"kparser"
+#define KPARSER_GENL_VERSION	0x1
 
 #define KPARSER_ERR_STR_LEN_MAX 256
 #define KPARSER_MAX_U16_STR_LEN 8
 #define KPARSER_MAX_U64_STR_LEN 16
+
+enum kparser_arg_val_type {
+	KPARSER_ARG_VAL_STR,
+	KPARSER_ARG_VAL_U16,
+	KPARSER_ARG_VAL_U64,
+	KPARSER_ARG_VAL_BOOL,
+	KPARSER_ARG_VAL_FLAG,
+	KPARSER_ARG_VAL_SET,
+	KPARSER_ARG_VAL_INVALID
+};
+
+#define KPARSER_SET_VAL_LEN_MAX 64
+
+struct kparser_arg_set {
+	const char *set_value_str;
+	__u64 set_value_enum;
+};
+
+struct kparser_arg_key_val_token {
+	struct {
+		enum kparser_arg_val_type type;
+		const char *key_name;
+		bool mandatory;
+		bool semi_optional;
+		int other_mandatory_idx;
+		bool immutable;
+		size_t str_arg_len_max;
+		size_t w_offset;
+		size_t w_len;
+		union {
+			struct {
+				size_t default_val_size;
+				const void *default_val;
+			};
+			struct {
+				size_t value_set_len;
+				const struct kparser_arg_set *value_set;
+				__u64 def_value_enum;
+			};
+			struct {
+				__u64 min_value;
+				__u64 def_value;
+				__u64 max_value;
+			};
+		};
+	};
+	const struct kparser_arg_key_val_token *default_template_token;
+};
+
+enum kparser_global_namespace_ids {
+	KPARSER_NS_INVALID,
+	md,
+	mdl,
+	node,
+	proto,
+	fields,
+	parser,
+	condexprs,
+	KPARSER_NS_MAX
+};
+
+enum kparser_md_type {
+	KPARSER_MD_INVALID,
+	KPARSER_MD_HDRDATA,
+	KPARSER_MD_HDRLEN,
+	KPARSER_MD_OFFSET,
+	KPARSER_MD_NUMENCAPS,
+	KPARSER_MD_NUMNODES,
+	KPARSER_MD_TIMESTAMP,
+	KPARSER_MD_MAX
+};
+
+struct kparser_global_namespaces {
+	enum kparser_global_namespace_ids name_space_id;
+	const char *name;
+	size_t arg_tokens_count;
+	const struct kparser_arg_key_val_token *arg_tokens; 
+	int req_attr_id;
+	int rsp_attr_id;
+	int cmd_buf_size;
+};
 
 enum {
 	KPARSER_ATTR_UNSPEC,
@@ -75,9 +163,15 @@ enum {
 
 #define KPARSER_CMD_MAX	(__KPARSER_CMD_MAX - 1)
 
-#define KPARSER_INVALID_ID 0xFFFF
-#define KPARSER_MAX_NAME 16
+#define KPARSER_INVALID_ID 0xffff
+
+#define KPARSER_USER_ID_MIN 0
+#define KPARSER_USER_ID_MAX 0x8000
+#define KPARSER_KMOD_ID_MIN 0x8001
+#define KPARSER_KMOD_ID_MAX 0xfffe
+#define KPARSER_MAX_NAME 128
 #define KPARSER_MAX_DIGIT_STR_LEN 16
+#define KPARSER_DEF_NAME_PREFIX "kparser_default_name"
 
 // prepend kparser_
 struct kparser_hkey {
@@ -111,12 +205,7 @@ struct kparser_metadata {
 	size_t frame_size;
 
 	/* Application specific meta metadata and metadata frames */
-#ifdef KERNEL_MOD
-	// TODO:
-	__u8 frame_data[0] __aligned(8);
-#else
-	__u8 frame_data[0];
-#endif
+	__u8 frame_data[0]; // __aligned(8);
 };
 
 struct kparser_md_xtrct_cnf {
@@ -167,10 +256,14 @@ struct kparser_md_xtrct_cnf {
 
 struct kparser_arg_md {
 	struct kparser_hkey key;
-	u16 soff;
-	u16 doff;
+	__u16 soff;
+	__u16 doff;
 	size_t len;
+	enum kparser_md_type type;
 	struct kparser_md_xtrct_cnf config;
+	struct kparser_hkey array_hkey;
+	__u16 array_doff;
+	struct kparser_hkey array_counter_id;
 };
 
 struct kparser_arg_mdl {
@@ -272,6 +365,13 @@ struct kparser_arg_parser {
 };
 
 #define KPARSER_ERR_STR_MAX_LEN 256
+
+struct kparser_config_cmd {
+	enum kparser_global_namespace_ids namespace_id;
+	union {
+		struct kparser_arg_md md_conf;
+	};
+};
 
 struct kparser_cmd_rsp_hdr {
 	s32 op_ret_code;
