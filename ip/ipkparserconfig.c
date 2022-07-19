@@ -271,6 +271,10 @@ static const struct kparser_arg_key_val_token proto_node_key_vals[] = {
 	KPARSER_ARG_BOOL("overlay", node_proto_conf.overlay),
 	KPARSER_ARG_U(64, "min_len", node_proto_conf.min_len, 0, 0xffff, 0,
 			"min len"),
+	KPARSER_ARG_BOOL("flag_fields_length",
+			node_proto_conf.ops.flag_fields_length),
+	KPARSER_ARG_BOOL("len_parameterized",
+			node_proto_conf.ops.len_parameterized),
 	KPARSER_ARG_U(16, "pflen_src_off", node_proto_conf.ops.pflen.src_off,
 			0, 0xffff, 0, "src offset"),
 	KPARSER_ARG_U(8, "pflen_size", node_proto_conf.ops.pflen.size, 0, 0xff, 0,
@@ -287,6 +291,8 @@ static const struct kparser_arg_key_val_token proto_node_key_vals[] = {
 	KPARSER_ARG_U(8, "pflen_add_value",
 			node_proto_conf.ops.pflen.add_value, 0, 0xff, 0,
 			"dummy_help"),
+	KPARSER_ARG_BOOL("next_proto_parameterized",
+			node_proto_conf.ops.next_proto_parameterized),
 	KPARSER_ARG_U(16, "pfnext_src_off",
 			node_proto_conf.ops.pfnext_proto.src_off,
 			0, 0xffff, 0, "dummy_help"),
@@ -299,6 +305,8 @@ static const struct kparser_arg_key_val_token proto_node_key_vals[] = {
 	KPARSER_ARG_U(8, "pfnext_rightshift",
 			node_proto_conf.ops.pfnext_proto.right_shift,
 			0, 0xff, 0, "dummy_help"),
+	KPARSER_ARG_BOOL("cond_exprs_parameterized",
+			node_proto_conf.ops.cond_exprs_parameterized),
 	KPARSER_ARG_HKEY_NAME("cond_exprs_table.name",
 			node_proto_conf.ops.cond_exprs_table),
 	KPARSER_ARG_HKEY_ID("cond_exprs_table.id",
@@ -380,9 +388,9 @@ static const struct kparser_arg_key_val_token proto_table_key_vals[] = {
 		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->
 				proto_table_conf.key.id),
 	},
+	KPARSER_ARG_H_K_IDX("idx", proto_table_conf.idx, 0, -1, -1),
 	KPARSER_ARG_U(32, "value", proto_table_conf.value, 0, 0xffffffff, 0,
 			"dummy_help"),
-	KPARSER_ARG_H_K_IDX("idx", proto_table_conf.idx, 0, -1, -1),
 	KPARSER_ARG_H_K_N("table.name", proto_table_conf.key.name,
 			KPARSER_DEF_NAME_PREFIX),
 	KPARSER_ARG_H_K_I("table.id", proto_table_conf.key.id,
@@ -722,12 +730,12 @@ static const struct kparser_arg_key_val_token parser_key_vals[] = {
 	},
 	KPARSER_ARG_U(16, "flags", parser_conf.config.flags, 0, 0xffff,
 			0, "dummy_help"),
-	KPARSER_ARG_U(16, "max_nodes", parser_conf.config.max_nodes, 0, 0xffff,
-			0, "dummy_help"),
-	KPARSER_ARG_U(16, "max_encaps", parser_conf.config.max_encaps, 0, 0xffff,
-			0, "dummy_help"),
-	KPARSER_ARG_U(16, "max_frames", parser_conf.config.max_frames, 0, 0xffff,
-			0, "dummy_help"),
+	KPARSER_ARG_U(16, "max_nodes", parser_conf.config.max_nodes,
+			0, 0xffff, KPARSER_MAX_NODES, "dummy_help"),
+	KPARSER_ARG_U(16, "max_encaps", parser_conf.config.max_encaps,
+			0, 0xffff, KPARSER_MAX_ENCAPS, "dummy_help"),
+	KPARSER_ARG_U(16, "max_frames", parser_conf.config.max_frames,
+			0, 0xffff, KPARSER_MAX_FRAMES, "dummy_help"),
 	KPARSER_ARG_U(64, "metameta_size", parser_conf.config.metameta_size, 0,
 			0xffffffff, 0, "dummy_help"),
 	KPARSER_ARG_U(64, "frame_size", parser_conf.config.frame_size, 0,
@@ -740,6 +748,187 @@ static const struct kparser_arg_key_val_token parser_key_vals[] = {
 	KPARSER_ARG_HKEY_ID("fail_node_key.id", parser_conf.fail_node_key),
 };
 
+static const struct kparser_arg_set expr_types[] = {
+	{
+		.set_value_str = "CONDEXPR_TYPE_EQUAL",
+		.set_value_enum = KPARSER_CONDEXPR_TYPE_EQUAL,
+	},
+	{
+		.set_value_str = "CONDEXPR_TYPE_NOTEQUAL",
+		.set_value_enum = KPARSER_CONDEXPR_TYPE_NOTEQUAL,
+	},
+	{
+		.set_value_str = "CONDEXPR_TYPE_LT",
+		.set_value_enum = KPARSER_CONDEXPR_TYPE_LT,
+	},
+	{
+		.set_value_str = "CONDEXPR_TYPE_LTE",
+		.set_value_enum = KPARSER_CONDEXPR_TYPE_LTE,
+	},
+	{
+		.set_value_str = "CONDEXPR_TYPE_GT",
+		.set_value_enum = KPARSER_CONDEXPR_TYPE_GT,
+	},
+	{
+		.set_value_str = "CONDEXPR_TYPE_GTE",
+		.set_value_enum = KPARSER_CONDEXPR_TYPE_GTE,
+	},
+};
+
+static const struct kparser_arg_key_val_token cond_exprs_vals[] = {
+	[0] {
+		.default_template_token = &hkey_name,
+		.semi_optional = true,
+		.other_mandatory_idx = 1,
+		.w_offset = offsetof(struct kparser_conf_cmd, cond_conf.key.name),
+		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->
+				cond_conf.key.name),
+	},
+	[1] {
+		.default_template_token = &hkey_id,
+		.semi_optional = true,
+		.other_mandatory_idx = 0,
+		.w_offset = offsetof(struct kparser_conf_cmd, cond_conf.key.id),
+		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->
+				cond_conf.key.id),
+	},
+	{
+		.type = KPARSER_ARG_VAL_SET,
+		.key_name = "type",
+		.value_set_len = sizeof(expr_types) / sizeof(expr_types[0]),
+		.value_set = expr_types,
+		.str_arg_len_max = KPARSER_SET_VAL_LEN_MAX,
+		.def_value_enum = KPARSER_CONDEXPR_TYPE_EQUAL,
+		.w_offset = offsetof(struct kparser_conf_cmd,
+				cond_conf.config.type),
+		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->
+				cond_conf.config.type),
+		.help_msg = "<type str set>",
+	},
+	KPARSER_ARG_U(16, "soff", cond_conf.config.src_off, 0, 0xffff, 0,
+			"start offset"),
+	KPARSER_ARG_U(8, "len", cond_conf.config.length, 0, 0xff, 0,
+			"length"),
+	KPARSER_ARG_U(32, "mask", cond_conf.config.mask, 0,
+			0xffffffff, 0, "length"),
+	KPARSER_ARG_U(32, "value", cond_conf.config.value, 0,
+			0xffffffff, 0, "length"),
+};
+
+static const struct kparser_arg_set default_fail_types[] = {
+	{
+		.set_value_str = "OKAY",
+		.set_value_enum = KPARSER_OKAY,
+	},
+	{
+		.set_value_str = "RET_OKAY",
+		.set_value_enum = KPARSER_RET_OKAY,
+	},
+	{
+		.set_value_str = "STOP_OKAY",
+		.set_value_enum = KPARSER_STOP_OKAY,
+	},
+	{
+		.set_value_str = "STOP_FAIL",
+		.set_value_enum = KPARSER_STOP_FAIL,
+	},
+	{
+		.set_value_str = "STOP_FAIL_CMP",
+		.set_value_enum = KPARSER_STOP_FAIL_CMP,
+	},
+	{
+		.set_value_str = "STOP_COMPARE",
+		.set_value_enum = KPARSER_STOP_COMPARE,
+	},
+};
+
+static const struct kparser_arg_set table_expr_types[] = {
+	{
+		.set_value_str = "CONDEXPR_TYPE_OR",
+		.set_value_enum = KPARSER_CONDEXPR_TYPE_OR,
+	},
+	{
+		.set_value_str = "CONDEXPR_TYPE_AND",
+		.set_value_enum = KPARSER_CONDEXPR_TYPE_AND,
+	},
+};
+
+static const struct kparser_arg_key_val_token cond_exprs_table_key_vals[] = {
+	[0] {
+		.default_template_token = &hkey_name,
+		.w_offset = offsetof(struct kparser_conf_cmd,
+				cond_table_conf.key.name),
+		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->
+				cond_table_conf.key.name),
+	},
+	[1] {
+		.default_template_token = &hkey_id,
+		.w_offset = offsetof(struct kparser_conf_cmd,
+				cond_table_conf.key.id),
+		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->
+				cond_table_conf.key.id),
+	},
+	KPARSER_ARG_H_K_IDX("idx", cond_table_conf.idx, 0, -1, -1),
+	{
+		.type = KPARSER_ARG_VAL_SET,
+		.key_name = "default_fail",
+		.value_set_len = sizeof(default_fail_types) /
+			sizeof(default_fail_types[0]),
+		.value_set = default_fail_types,
+		.str_arg_len_max = KPARSER_SET_VAL_LEN_MAX,
+		.def_value_enum = KPARSER_STOP_OKAY,
+		.w_offset = offsetof(struct kparser_conf_cmd,
+				cond_table_conf.default_fail),
+		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->
+				cond_table_conf.default_fail),
+		.help_msg = "<relevant kparser return codes>",
+	},
+	{
+		.type = KPARSER_ARG_VAL_SET,
+		.key_name = "type",
+		.value_set_len = sizeof(table_expr_types) /
+			sizeof(table_expr_types[0]),
+		.value_set = table_expr_types,
+		.str_arg_len_max = KPARSER_SET_VAL_LEN_MAX,
+		.def_value_enum = KPARSER_CONDEXPR_TYPE_OR,
+		.w_offset = offsetof(struct kparser_conf_cmd,
+				cond_table_conf.type),
+		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->
+				cond_table_conf.type),
+		.help_msg = "<type str set>",
+	},
+	KPARSER_ARG_H_K_N("condexprs.name", cond_table_conf.condexpr_expr_key.name,
+			KPARSER_DEF_NAME_PREFIX),
+	KPARSER_ARG_H_K_I("condexprs.id", cond_table_conf.condexpr_expr_key.id,
+			KPARSER_USER_ID_MIN, KPARSER_USER_ID_MAX,
+			KPARSER_INVALID_ID),
+};
+
+static const struct kparser_arg_key_val_token cond_exprs_tables_key_vals[] = {
+	[0] {
+		.default_template_token = &hkey_name,
+		.w_offset = offsetof(struct kparser_conf_cmd,
+				cond_tables_conf.key.name),
+		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->
+				cond_tables_conf.key.name),
+	},
+	[1] {
+		.default_template_token = &hkey_id,
+		.w_offset = offsetof(struct kparser_conf_cmd,
+				cond_tables_conf.key.id),
+		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->
+				cond_tables_conf.key.id),
+	},
+	KPARSER_ARG_H_K_IDX("idx", cond_tables_conf.idx, 0, -1, -1),
+	KPARSER_ARG_H_K_N("condexprstable.name",
+			cond_tables_conf.condexpr_expr_table_key.name,
+			KPARSER_DEF_NAME_PREFIX),
+	KPARSER_ARG_H_K_I("condexprstable.id",
+			cond_tables_conf.condexpr_expr_table_key.id,
+			KPARSER_USER_ID_MIN, KPARSER_USER_ID_MAX,
+			KPARSER_INVALID_ID),
+};
+
 #define DEFINE_NAMESPACE_MEMBERS(id, token_name)			\
 	.name_space_id = KPARSER_NS_##id,				\
 	.name = KPARSER_NAMESPACE_NAME_##id,				\
@@ -749,58 +938,72 @@ static const struct kparser_arg_key_val_token parser_key_vals[] = {
 	.update_attr_id = KPARSER_ATTR_UPDATE_##id,			\
 	.read_attr_id = KPARSER_ATTR_READ_##id,				\
 	.delete_attr_id = KPARSER_ATTR_DELETE_##id,			\
-	.rsp_attr_id = KPARSER_ATTR_RSP_##id,				\
+	.rsp_attr_id = KPARSER_ATTR_RSP_##id				\
 
 static const struct kparser_global_namespaces kparser_arg_namespace_md = {
-	DEFINE_NAMESPACE_MEMBERS(METADATA, md_key_vals)
+	DEFINE_NAMESPACE_MEMBERS(METADATA, md_key_vals),
 };
 
 static const struct kparser_global_namespaces kparser_arg_namespace_ml = {
-	DEFINE_NAMESPACE_MEMBERS(METALIST, mdl_key_vals)
+	DEFINE_NAMESPACE_MEMBERS(METALIST, mdl_key_vals),
 };
 
 static const struct kparser_global_namespaces
 kparser_arg_namespace_proto_node = {
-	DEFINE_NAMESPACE_MEMBERS(NODE_PROTO, proto_node_key_vals)
+	DEFINE_NAMESPACE_MEMBERS(NODE_PROTO, proto_node_key_vals),
 };
 
 static const struct kparser_global_namespaces
 kparser_arg_namespace_parse_node = {
-	DEFINE_NAMESPACE_MEMBERS(NODE_PARSE, parse_node_key_vals)
+	DEFINE_NAMESPACE_MEMBERS(NODE_PARSE, parse_node_key_vals),
 };
 
 static const struct kparser_global_namespaces
 kparser_arg_namespace_proto_table = {
-	DEFINE_NAMESPACE_MEMBERS(PROTO_TABLE, proto_table_key_vals)
+	DEFINE_NAMESPACE_MEMBERS(PROTO_TABLE, proto_table_key_vals),
 };
 
 static const struct kparser_global_namespaces
 kparser_arg_namespace_tlv_proto_node = {
-	DEFINE_NAMESPACE_MEMBERS(TLV_NODE_PROTO, tlv_proto_node_key_vals)
+	DEFINE_NAMESPACE_MEMBERS(TLV_NODE_PROTO, tlv_proto_node_key_vals),
 };
 
 static const struct kparser_global_namespaces
 kparser_arg_namespace_tlv_parse_node = {
-	DEFINE_NAMESPACE_MEMBERS(TLV_NODE_PARSE, tlv_parse_node_key_vals)
+	DEFINE_NAMESPACE_MEMBERS(TLV_NODE_PARSE, tlv_parse_node_key_vals),
 };
 
 static const struct kparser_global_namespaces
 kparser_arg_namespace_tlvs_proto_node = {
-	DEFINE_NAMESPACE_MEMBERS(TLVS_NODE_PROTO, tlvs_proto_node_key_vals)
+	DEFINE_NAMESPACE_MEMBERS(TLVS_NODE_PROTO, tlvs_proto_node_key_vals),
 };
 
 static const struct kparser_global_namespaces
 kparser_arg_namespace_tlvs_parse_node = {
-	DEFINE_NAMESPACE_MEMBERS(TLVS_NODE_PARSE, tlvs_parse_node_key_vals)
+	DEFINE_NAMESPACE_MEMBERS(TLVS_NODE_PARSE, tlvs_parse_node_key_vals),
 };
 
 static const struct kparser_global_namespaces
 kparser_arg_namespace_tlv_proto_table = {
-	DEFINE_NAMESPACE_MEMBERS(TLV_PROTO_TABLE, tlv_proto_table_key_vals)
+	DEFINE_NAMESPACE_MEMBERS(TLV_PROTO_TABLE, tlv_proto_table_key_vals),
+};
+
+static const struct kparser_global_namespaces kparser_arg_namespace_cond_exprs = {
+	DEFINE_NAMESPACE_MEMBERS(CONDEXPRS, cond_exprs_vals),
+};
+
+static const struct kparser_global_namespaces
+kparser_arg_namespace_cond_exprs_table = {
+	DEFINE_NAMESPACE_MEMBERS(CONDEXPRS_TABLE, cond_exprs_table_key_vals),
+};
+
+static const struct kparser_global_namespaces
+kparser_arg_namespace_cond_exprs_tables = {
+	DEFINE_NAMESPACE_MEMBERS(CONDEXPRS_TABLES, cond_exprs_tables_key_vals),
 };
 
 static const struct kparser_global_namespaces kparser_arg_namespace_parser = {
-	DEFINE_NAMESPACE_MEMBERS(PARSER, parser_key_vals)
+	DEFINE_NAMESPACE_MEMBERS(PARSER, parser_key_vals),
 };
 
 const struct kparser_global_namespaces *g_namespaces[] = {
@@ -820,6 +1023,8 @@ const struct kparser_global_namespaces *g_namespaces[] = {
 
 	[KPARSER_NS_FIELDS] = NULL, // TODO
 	[KPARSER_NS_PARSER] = &kparser_arg_namespace_parser,
-	[KPARSER_NS_CONDEXPRS] = NULL, // TODO
+	[KPARSER_NS_CONDEXPRS] = &kparser_arg_namespace_cond_exprs,
+	[KPARSER_NS_CONDEXPRS_TABLE] = &kparser_arg_namespace_cond_exprs_table,
+	[KPARSER_NS_CONDEXPRS_TABLES] = &kparser_arg_namespace_cond_exprs_tables,
 	[KPARSER_NS_MAX] = NULL,
 };

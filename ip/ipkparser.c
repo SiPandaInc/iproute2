@@ -158,9 +158,11 @@ static void dump_cmd_rsp(const struct kparser_global_namespaces *namespace,
 		fprintf(stdout, "rsp:obj dump starts\n");
 		dump_cmd_arg(namespace, &rsp->object);
 		for (i = 0; i < rsp->objects_len; i++) {
-			if (cmd_rsp_size < sizeof(*rsp)) {
+			if (cmd_rsp_size < sizeof(struct kparser_conf_cmd)) {
 				fprintf(stderr,
-					"rsp:obj dump err, broken buffer\n");
+					"rsp:obj dump err, broken buffer,"
+					"cmd_rsp_size:%lu expctd:%lu\n",
+					cmd_rsp_size, sizeof(*rsp));
 				return;
 			}
 			cmd_rsp_size -= sizeof(struct kparser_conf_cmd);
@@ -594,25 +596,19 @@ static int do_create_update_ns(
 				break;
 			if (tbid != KPARSER_INVALID_ID)
 				memcpy(((void *) cmd_arg) + w_offset, &tbid,
-						sizeof(tbid));
-
+						w_len);
 			else
 				memcpy(((void *) cmd_arg) + w_offset,
-						&curr_arg->def_value,
-						sizeof(curr_arg->def_value));
-			
+						&curr_arg->def_value, w_len);
 			break;
 
 		case KPARSER_ARG_VAL_HYB_IDX:
 			if (tbidx != -1)
-				memcpy(((void *) cmd_arg) + w_offset, &tbidx,
-						sizeof(tbidx));
-
+				memcpy(((void *) cmd_arg) + w_offset,
+						&tbidx, w_len);
 			else
 				memcpy(((void *) cmd_arg) + w_offset,
-						&curr_arg->def_value,
-						sizeof(curr_arg->def_value));
-			
+						&curr_arg->def_value, w_len);
 			break;
   
 		case KPARSER_ARG_VAL_STR:
@@ -889,7 +885,7 @@ array_parse_start:
 		}
 	}
 
-	dump_cmd_arg(namespace, cmd_arg);
+	// dump_cmd_arg(namespace, cmd_arg);
 
 	rc = exec_cmd(KPARSER_CMD_CONFIGURE, op_attr_id,
 			namespace->rsp_attr_id,
