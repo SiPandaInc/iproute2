@@ -104,7 +104,6 @@ static const struct cmd {
 	{ "fou",	do_ipfou },
 	{ "ila",	do_ipila },
 	{ "kparser",	do_kparser },
-// ip_parser_create_parser, with one root node
 	{ "macsec",	do_ipmacsec },
 	{ "tunnel",	do_iptunnel },
 	{ "tunl",	do_iptunnel },

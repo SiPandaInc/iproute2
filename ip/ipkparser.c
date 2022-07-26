@@ -27,7 +27,7 @@ static struct rtnl_handle genl_rth = { .fd = -1 };
 static int genl_family = -1;
 
 enum {
-	op_create,
+	op_create = 0,
 	op_read,
 	op_update,
 	op_delete,
@@ -39,10 +39,13 @@ enum {
 
 #define KPARSER_NLM_MAX_LEN 8192
 
+static void usage(FILE *stream, int argc, int *argidx, char **argv,
+		bool dump_ops, bool dump_objects);
+
 static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 		const struct kparser_conf_cmd *cmd_arg)
 {
-	ssize_t w_offset, w_len, elem_counter, elem_size, elems;
+	size_t w_offset, w_len, elem_counter, elem_size, elems;
 	const struct kparser_arg_key_val_token *curr_arg;
 	bool array_dumped = false;
 	struct kparser_hkey *hks;
@@ -107,7 +110,7 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 					&curr_arg->value_set[j].set_value_enum,
 					w_len))
 					continue;
-				fprintf(stdout, "\t%s\n",
+				fprintf(stdout, "%s\n",
 					curr_arg->value_set[j].set_value_str);
 			}
 			break;
@@ -122,7 +125,7 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 				return;
 			}
 			array_dumped = true;
-			elems = *(ssize_t *)
+			elems = *(size_t *)
 				(((void *) cmd_arg) + elem_counter);
 			hks =  ((void *) cmd_arg) + w_offset;
 			fprintf(stdout, "\t\tarray len:%lu\n", elems);
@@ -132,13 +135,14 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 			}
 			break;
 		default:
+			printf("not supported\n");
 			break;
 		}
 	}
 }
 
 static void dump_cmd_rsp(const struct kparser_global_namespaces *namespace,
-		const void *cmd_rsp, ssize_t cmd_rsp_size)
+		const void *cmd_rsp, size_t cmd_rsp_size)
 {
 	const struct kparser_cmd_rsp_hdr *rsp = cmd_rsp;
 	int i;
@@ -176,7 +180,7 @@ static void dump_cmd_rsp(const struct kparser_global_namespaces *namespace,
 
 static inline bool parse_cmd_line_key_val_str(int argc, int *argidx,
 		const char *argv[], bool mandatory, const char *key,
-		void *value, ssize_t value_len, bool *value_err,
+		void *value, size_t value_len, bool *value_err,
 		bool restart)
 {
 	const char *str_arg_ptr;
@@ -254,7 +258,7 @@ static inline bool parse_cmd_line_key_val_str(int argc, int *argidx,
 
 static inline bool parse_cmd_line_key_val_ints(int argc, int *argidx,
 		const char *argv[], bool mandatory, const char *key,
-		void *value, ssize_t value_len, int64_t min, int64_t max,
+		void *value, size_t value_len, int64_t min, int64_t max,
 		bool *value_err, bool restart, bool ignore_min_max)
 {
 	char arg_val[KPARSER_MAX_STR_LEN_U64];
@@ -296,8 +300,8 @@ static inline bool parse_cmd_line_key_val_ints(int argc, int *argidx,
 }
 
 static inline bool parse_element(const char *argv,
-		char *ns, ssize_t ns_size,
-		char *table_name, ssize_t table_name_size,
+		char *ns, size_t ns_size,
+		char *table_name, size_t table_name_size,
 		__u16 *table_id, int *idx)
 {
 	char arg_u16[KPARSER_MAX_STR_LEN_U16];
@@ -427,8 +431,8 @@ static inline bool parse_element(const char *argv,
 }
 
 static int32_t exec_cmd(uint8_t cmd, int32_t req_attr, int32_t rsp_attr,
-		const void *cmd_arg, ssize_t cmd_arg_size,
-		void **rsp_buf, ssize_t *rsp_buf_size)
+		const void *cmd_arg, size_t cmd_arg_size,
+		void **rsp_buf, size_t *rsp_buf_size)
 {
 	struct rtattr *tb[KPARSER_ATTR_MAX + 1];
 	struct nlmsghdr *answer;
@@ -497,18 +501,18 @@ static int do_create_update_ns(
 {
 	bool ret = true, value_err = false, ignore_min_max = false;
 	const struct kparser_arg_key_val_token *curr_arg;
-	ssize_t *dst_array_size, elem_offset, elem_size;
+	size_t *dst_array_size, elem_offset, elem_size;
 	struct kparser_conf_cmd *cmd_arg = NULL;
 	char types_buf[KPARSER_SET_VAL_LEN_MAX];
-	ssize_t w_offset, w_len, cmd_arg_len;
-	ssize_t offset_adjust, elem_counter;
+	size_t w_offset, w_len, cmd_arg_len;
+	size_t offset_adjust, elem_counter;
 	const char *key, *dependent_Key;
 	char tbn[KPARSER_MAX_NAME] = {};
 	__u16 tbid = KPARSER_INVALID_ID;
 	int i, j, rc, op_attr_id;
 	void *scratch_buf = NULL;
 	int other_mandatory_idx;
-	ssize_t cmd_rsp_size = 0;
+	size_t cmd_rsp_size = 0;
 	void *cmd_rsp = NULL;
 	int ns_keys_bvs[16];
 	int type, elem_type;
@@ -518,7 +522,7 @@ static int do_create_update_ns(
 		ret = parse_element(hybrid_token, NULL, 0, tbn, sizeof(tbn),
 				&tbid, &tbidx);
 		if (!ret) {
-			fprintf(stderr, "namespace `%s`: token err:%s\n",
+			fprintf(stderr, "object `%s`: token err:%s\n",
 					namespace->name, hybrid_token);
 			return EINVAL;
 		}
@@ -527,7 +531,7 @@ static int do_create_update_ns(
 	cmd_arg_len = sizeof(*cmd_arg);
 	cmd_arg = calloc(1, cmd_arg_len);
 	if (!cmd_arg) {
-		fprintf(stderr, "namespace `%s`: calloc() failed\n",
+		fprintf(stderr, "object `%s`: calloc() failed\n",
 				namespace->name);
 		return ENOMEM;
 	}
@@ -618,7 +622,7 @@ static int do_create_update_ns(
 					&value_err, true);
 			if (ret) {
 				if ((op == op_update) && curr_arg->immutable) {
-					fprintf(stderr, "namespace `%s`: "
+					fprintf(stderr, "object `%s`: "
 						"key:`%s` immutable\n",
 						namespace->name, key);
 					rc = EINVAL;
@@ -652,7 +656,7 @@ static int do_create_update_ns(
 					true, ignore_min_max);
 			if (ret) {
 				if ((op == op_update) && curr_arg->immutable) {
-					fprintf(stderr, "namespace `%s`: "
+					fprintf(stderr, "object `%s`: "
 						"key:`%s` immutable\n",
 						namespace->name, key);
 					rc = EINVAL;
@@ -694,7 +698,7 @@ static int do_create_update_ns(
 				break;
 			}
 			if ((op == op_update) && curr_arg->immutable) {
-				fprintf(stderr, "namespace `%s`: "
+				fprintf(stderr, "object `%s`: "
 						"key:`%s` immutable\n",
 						namespace->name, key);
 				rc = EINVAL;
@@ -741,7 +745,7 @@ array_parse_start:
 				break;
 
 			if (w_len > elem_size) {
-				fprintf(stderr, "namespace `%s`:key:%s:"
+				fprintf(stderr, "object `%s`:key:%s:"
 					"config error, w_len >"
 					" elem_size\n",
 					namespace->name, key);
@@ -750,7 +754,7 @@ array_parse_start:
 			}
 
 			if (offset_adjust >= elem_size) {
-				fprintf(stderr, "namespace `%s`:key:%s:"
+				fprintf(stderr, "object `%s`:key:%s:"
 					"config error, offset_adjust >"
 					" elem_size\n",
 					namespace->name, key);
@@ -760,7 +764,7 @@ array_parse_start:
 
 			scratch_buf = realloc(scratch_buf, elem_size);
 			if (!scratch_buf) {
-				fprintf(stderr, "namespace `%s`:key:%s:"
+				fprintf(stderr, "object `%s`:key:%s:"
 					"realloc() failed for scratch_buf\n",
 					namespace->name, key);
 				rc = ENOMEM;
@@ -797,7 +801,7 @@ array_parse_start:
 			}
 
 			if ((op == op_update) && curr_arg->immutable) {
-				fprintf(stderr, "namespace `%s`: "
+				fprintf(stderr, "object `%s`: "
 						"key:`%s` immutable\n",
 						namespace->name, key);
 				rc = EINVAL;
@@ -809,7 +813,7 @@ array_parse_start:
 			cmd_arg_len += *dst_array_size * elem_size;
 			cmd_arg = realloc(cmd_arg, cmd_arg_len);
 			if (!cmd_arg) {
-				fprintf(stderr, "namespace `%s`:key:%s:"
+				fprintf(stderr, "object `%s`:key:%s:"
 					"realloc() failed\n",
 					namespace->name, key);
 				rc = ENOMEM;
@@ -819,7 +823,7 @@ array_parse_start:
 				((*dst_array_size - 1) * elem_size);
 
 			if (elem_offset + elem_size > cmd_arg_len) {
-				fprintf(stderr, "namespace `%s`:key:%s:"
+				fprintf(stderr, "object `%s`:key:%s:"
 					"config error, write overflow\n",
 					namespace->name, key);
 				rc = EINVAL;
@@ -837,7 +841,7 @@ array_parse_start:
 		}
 
 		if (ret == false) {
-			fprintf(stderr, "namespace `%s`: cmdline arg error\n",
+			fprintf(stderr, "object `%s`: cmdline arg error\n",
 					namespace->name);
 			rc = EINVAL;
 			goto out;
@@ -876,7 +880,7 @@ array_parse_start:
 					dependent_Key = namespace->arg_tokens[
 						other_mandatory_idx].
 						default_template_token->key_name;
-			fprintf(stderr, "namespace `%s`: either configure key"
+			fprintf(stderr, "object `%s`: either configure key"
 					" `%s` and/or key `%s`\n",
 					namespace->name, 
 					key, dependent_Key);
@@ -885,7 +889,7 @@ array_parse_start:
 		}
 	}
 
-	// dump_cmd_arg(namespace, cmd_arg);
+	dump_cmd_arg(namespace, cmd_arg);
 
 	rc = exec_cmd(KPARSER_CMD_CONFIGURE, op_attr_id,
 			namespace->rsp_attr_id,
@@ -919,36 +923,47 @@ out:
 static int do_create_update(int op, int argc, int *argidx,
 		const char **argv)
 {
-	const char *ns, *hybrid_token = NULL;
+	const char *ns = NULL, *hybrid_token = NULL;
 	char namespace[KPARSER_MAX_NAME];
 	int i;
+
+	if (argc && (*argidx <= (argc - 1)) && argv) {
+		if (strchr(argv[*argidx], '/')) {
+			hybrid_token = argv[*argidx];
+			if (!parse_element(argv[*argidx],
+					   namespace, sizeof(namespace),
+					   NULL, 0, NULL, NULL)) {
+				fprintf(stderr,
+					"Invalid hybrid key format: %s\n",
+					argv[*argidx]);
+				fprintf(stderr, "hybrid key format is:"
+					"object/<name>:<id>/<idx>\n");
+				return EINVAL;;
+			}
+			ns = namespace;
+		} else
+			ns = argv[*argidx];
+	}
+
+	if (!ns)
+		goto errout;
 
 	for (i = KPARSER_NS_METADATA; i < KPARSER_NS_MAX; i++) {
 
 		if (!g_namespaces[i])
 			continue;
 
-		if (argc && (*argidx <= (argc - 1)) && argv) {
-			if (strchr(argv[*argidx], '/')) {
-				hybrid_token = argv[*argidx];
-				if (!parse_element(argv[*argidx], namespace,
-					sizeof(namespace), NULL, 0, NULL,
-					NULL))
-						break;
-				ns = namespace;
-			} else
-				ns = argv[*argidx];
-
-			if (matches(ns, g_namespaces[i]->name) == 0) {
-				(*argidx)++;
-				return do_create_update_ns(g_namespaces[i],
-						op, argc, argidx, argv,
-						hybrid_token);
-			}
+		if (matches(ns, g_namespaces[i]->name) == 0) {
+			(*argidx)++;
+			return do_create_update_ns(g_namespaces[i],
+					op, argc, argidx, argv,
+					hybrid_token);
 		}
 	}
 
-	fprintf(stderr, "Invalid namespace in op: %d\n", op);
+errout:
+	fprintf(stderr, "Invalid namespace/object: %s\n", ns);
+	usage(stderr, 0, NULL, NULL, false, true);
 	return EINVAL;
 }
 
@@ -1019,15 +1034,22 @@ static const char *arg_val_type_str[] =
 	[KPARSER_ARG_VAL_INVALID] = "end of valid values"
 };
 
-static void usage(FILE *stream, int argc, int *argidx, char **argv)
+static void usage(FILE *stream, int argc, int *argidx, char **argv,
+		bool dump_ops, bool dump_objects)
 {
 	const struct kparser_arg_key_val_token *token;
 	const char *arg_name, *ns = NULL, *arg = NULL;
 	const char *default_set_value = NULL;
 	int i, j, k;
 
+	if (dump_ops)
+		goto label_dump_ops;
+
+	if (dump_objects)
+		goto label_dump_objects;
+
 	fprintf(stream,
-		"Usage: ip kparser <operations> <objects> <args>\n");
+		"Usage: ip kparser [ operations ] [ objects ] [ args ]\n");
 
 	if (!argc || !argidx || !argv) {
 		fprintf(stream, "type `help` for more details on usage\n");
@@ -1039,6 +1061,7 @@ static void usage(FILE *stream, int argc, int *argidx, char **argv)
 			0)) || argc == 0) {
 		if (argidx)
 			(*argidx)++;
+label_dump_ops:
 		fprintf(stream, "operations := {");
 		for (i = 0; i < sizeof(cli_ops) / sizeof(cli_ops[0]); i++) {
 			if (i == (sizeof(cli_ops) / sizeof(cli_ops[0]) - 1))
@@ -1046,6 +1069,8 @@ static void usage(FILE *stream, int argc, int *argidx, char **argv)
 			else
 				fprintf(stream, "%s | ", cli_ops[i].op_name);
 		}
+		if (dump_ops)
+			return;
 	}
 
 	if ((argc && argidx && (*argidx <= (argc - 1)) && argv &&
@@ -1062,6 +1087,7 @@ static void usage(FILE *stream, int argc, int *argidx, char **argv)
 			goto print_args;
 		ns = NULL;
 
+label_dump_objects:
 		fprintf(stream, "objects := {");
 		for (i = KPARSER_NS_METADATA; i < KPARSER_NS_MAX; i++) {
 			if (g_namespaces[i] == NULL)
@@ -1069,6 +1095,8 @@ static void usage(FILE *stream, int argc, int *argidx, char **argv)
 			fprintf(stream, "%s | ", g_namespaces[i]->name);
 		}
 		fprintf(stream, "}\n");
+		if (dump_objects)
+			return;
 	}
 
 	if ((argc && argidx && (*argidx <= (argc - 1)) && argv &&
@@ -1176,13 +1204,13 @@ int do_kparser(int argc, char **argv)
 	int i;
 
 	if (argc < 1) {
-		usage(stderr, 0, NULL, NULL);
+		usage(stderr, 0, NULL, NULL, false, false);
 		return EINVAL;
 	}
 
 	if (matches(*argv, "help") == 0) {
 		argidx++;
-		usage(stdout, argc, &argidx, argv);
+		usage(stdout, argc, &argidx, argv, false, false);
 		return 0;
 	}
 
@@ -1206,8 +1234,8 @@ int do_kparser(int argc, char **argv)
 		}
 	}
 
-	fprintf(stderr, "Invalid operations.");
+	fprintf(stderr, "Invalid operation: %s\n", argv[argidx]);
+	usage(stderr, 0, NULL, NULL, true, false);
 	fprintf(stderr, "Try \"<> kparser help\" for more details\n");
 	return EINVAL;
 }
-// TODO: cli should use objects instead of namespaces
