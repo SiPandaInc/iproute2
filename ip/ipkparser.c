@@ -1,5 +1,5 @@
 /*
- * ipkparser.c	KParser CLI 
+ * ipkparser.c	kParser CLI 
  *
  *              This program is free software; you can redistribute it and/or
  *              modify it under the terms of the GNU General Public License
@@ -31,6 +31,9 @@ enum {
 	op_read,
 	op_update,
 	op_delete,
+	op_lock,
+	op_unlock,
+	op_max
 };
 
 #define KPARSER_REQUEST(_req, _bufsiz, _cmd, _flags)			\
@@ -116,7 +119,8 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 			break;
 		case KPARSER_ARG_VAL_ARRAY:
 			if (array_dumped) {
-				fprintf(stdout, "\t\tkey array already dumped\n");
+				fprintf(stdout,
+					"\t\tkey array already dumped\n");
 				break;
 			}
 			if (elem_size != sizeof (*hks)) {
@@ -213,7 +217,7 @@ static inline bool parse_cmd_line_key_val_str(int argc, int *argidx,
 			if (!argv[*argidx]) {
 				if (mandatory)
 					fprintf(stderr,
-						"Expected Key `%s` notfound!\n",
+						"Expected Key `%s` missing!\n",
 						key);
 				return false;
 			}
@@ -353,10 +357,11 @@ static inline bool parse_element(const char *argv,
 	table_name[(tk1 - tk) + 1] = '\0';
 	tk1+=2;
 	if (tk1 >= argv + strlen(argv)) {
-		fprintf(stderr, "%s:Create table entry command's format is "
-				"\"table/<table_name>:<table_id>/<table_idx>\"."
-				"Here input required after table key name \"%s\"\n",
-				__FUNCTION__, table_name);
+		fprintf(stderr,
+			"%s:Create table entry command's format is "
+			"\"table/<table_name>:<table_id>/<table_idx>\"."
+			"Here input required after table key name \"%s\"\n",
+			__FUNCTION__, table_name);
 		return false;
 	}
 	tk = strchr(tk1, '/');
@@ -369,20 +374,22 @@ static inline bool parse_element(const char *argv,
 	}
 	tk--;
 	if ((tk - tk1)+1 > sizeof(arg_u16)) {
-		fprintf(stderr, "%s:Create table entry command's table"
-				" key name id's length %ld, but max allowed key"
-				" id len is %lu\n",
-				__FUNCTION__,(tk - tk1)+1,sizeof(arg_u16));
+		fprintf(stderr,
+			"%s:Create table entry command's table"
+			" key name id's length %ld, but max allowed key"
+			" id len is %lu\n",
+			__FUNCTION__,(tk - tk1)+1,sizeof(arg_u16));
 		return false;
 	}
 	strncpy(arg_u16, tk1, tk - tk1+1);
 	arg_u16[(tk - tk1) + 1] = '\0';
 	tk+=2;
 	if (tk >= argv + strlen(argv)) {
-		fprintf(stderr, "%s:Create table entry command's format is "
-				"\"table/<table_name>:<table_id>/<table_idx>\"."
-				"Here input required after table key id \"%s\"\n",
-				__FUNCTION__, arg_u16);
+		fprintf(stderr,
+			"%s:Create table entry command's format is "
+			"\"table/<table_name>:<table_id>/<table_idx>\"."
+			"Here input required after table key id \"%s\"\n",
+			__FUNCTION__, arg_u16);
 		return false;
 	}
 	ret_digit = strtoull(arg_u16, NULL, 0);	
@@ -403,10 +410,11 @@ static inline bool parse_element(const char *argv,
 
 	tk1 = argv + strlen(argv);
 	if ((tk1 - tk)+1 > sizeof(arg_u16)) {
-		fprintf(stderr, "%s:Create table entry command's table"
-				" key index's length is %ld, but max allowed key"
-				" index len is %lu\n",
-				__FUNCTION__,(tk1 - tk)+1,sizeof(arg_u16));
+		fprintf(stderr,
+			"%s:Create table entry command's table"
+			" key index's length is %ld, but max allowed key"
+			" index len is %lu\n",
+			__FUNCTION__,(tk1 - tk)+1,sizeof(arg_u16));
 		return false;
 	}
 	strncpy(arg_u16, tk, tk1 - tk+1);
@@ -471,7 +479,8 @@ static int32_t exec_cmd(uint8_t cmd, int32_t req_attr, int32_t rsp_attr,
 	}
 
 	ghdr = NLMSG_DATA(answer);
-	rc = parse_rtattr(tb, KPARSER_ATTR_MAX, (void *) ghdr + GENL_HDRLEN, len);
+	rc = parse_rtattr(tb, KPARSER_ATTR_MAX,
+			(void *) ghdr + GENL_HDRLEN, len);
 	if (rc < 0) {
 		fprintf(stderr, "parse_rtattr() err, rc:%d\n", rc);
 		return rc;
@@ -482,19 +491,21 @@ static int32_t exec_cmd(uint8_t cmd, int32_t req_attr, int32_t rsp_attr,
 		if (*rsp_buf_size) {
 			*rsp_buf = calloc(1, *rsp_buf_size);
 			if (!(*rsp_buf)) {
-				fprintf(stderr, "attr:%d: calloc() failed, size:%lu\n",
-						rsp_attr, *rsp_buf_size);
+				fprintf(stderr,
+					"attr:%d: calloc() failed, size:%lu\n",
+					rsp_attr, *rsp_buf_size);
 				*rsp_buf_size = 0;
 				return -1;
 			}
-			memcpy(*rsp_buf, RTA_DATA(tb[rsp_attr]), *rsp_buf_size);
+			memcpy(*rsp_buf, RTA_DATA(tb[rsp_attr]),
+			       *rsp_buf_size);
 		}
 	}
 
 	return 0;
 }
 
-static int do_create_update_ns(
+static int do_cli_ns(
 		const struct kparser_global_namespaces *namespace,
 		int op, int argc, int *argidx, const char **argv,
 		const char *hybrid_token)
@@ -540,17 +551,31 @@ static int do_create_update_ns(
 	case op_create:
 		op_attr_id = namespace->create_attr_id;
 		break;
+
 	case op_update:
 		op_attr_id = namespace->update_attr_id;
 		break;
+
 	case op_read:
 		ignore_min_max = true;
 		op_attr_id = namespace->read_attr_id;
 		break;
+
+	case op_lock:
+		ignore_min_max = true;
+		op_attr_id = namespace->create_attr_id;
+		break;
+
+	case op_unlock:
+		ignore_min_max = true;
+		op_attr_id = namespace->delete_attr_id;
+		break;
+
 	case op_delete:
 		ignore_min_max = true;
 		op_attr_id = namespace->delete_attr_id;
 		break;
+
 	default:
 		fprintf(stderr, "invalid op:%d\n", op);
 		return EINVAL;
@@ -879,7 +904,8 @@ array_parse_start:
 				if (!dependent_Key)
 					dependent_Key = namespace->arg_tokens[
 						other_mandatory_idx].
-						default_template_token->key_name;
+							default_template_token
+							->key_name;
 			fprintf(stderr, "object `%s`: either configure key"
 					" `%s` and/or key `%s`\n",
 					namespace->name, 
@@ -920,7 +946,7 @@ out:
 	return rc;
 }
 
-static int do_create_update(int op, int argc, int *argidx,
+static int do_cli(int op, int argc, int *argidx,
 		const char **argv)
 {
 	const char *ns = NULL, *hybrid_token = NULL;
@@ -955,7 +981,7 @@ static int do_create_update(int op, int argc, int *argidx,
 
 		if (matches(ns, g_namespaces[i]->name) == 0) {
 			(*argidx)++;
-			return do_create_update_ns(g_namespaces[i],
+			return do_cli_ns(g_namespaces[i],
 					op, argc, argidx, argv,
 					hybrid_token);
 		}
@@ -967,53 +993,36 @@ errout:
 	return EINVAL;
 }
 
-typedef int (*cli_ops_fns)(int argc, int *argindx, const char **argv);
-
-static int do_create(int argc, int *argidx, const char **argv)
-{
-	return do_create_update(op_create, argc, argidx, argv);
-}
-
-static int do_update(int argc, int *argidx, const char **argv)
-{
-	return do_create_update(op_update, argc, argidx, argv);
-}
-
-static int do_read(int argc, int *argidx, const char **argv)
-{
-	return do_create_update(op_read, argc, argidx, argv);
-}
-
-static int do_delete(int argc, int *argidx, const char **argv)
-{
-	return do_create_update(op_delete, argc, argidx, argv);
-}
-
 struct kparser_cli_ops {
+	int op;
 	const char *op_name;
-	cli_ops_fns op_handler;	
+	bool hidden;
 };
 
 static struct kparser_cli_ops cli_ops[] = {
 	{
 		.op_name = "create",
-		.op_handler = do_create,
+		.op = op_create,
 	},
 	{
 		.op_name = "read",
-		.op_handler = do_read,
+		.op = op_read,
 	},
 	{
 		.op_name = "update",
-		.op_handler = do_update,
+		.op = op_update,
 	},
 	{
 		.op_name = "delete",
-		.op_handler = do_delete,
+		.op = op_delete,
 	},
 	{
-		.op_name = "do_parse",
-		.op_handler = NULL,
+		.op_name = "lock",
+		.op = op_lock,
+	},
+	{
+		.op_name = "unlock",
+		.op = op_unlock,
 	},
 };
 
@@ -1064,6 +1073,8 @@ static void usage(FILE *stream, int argc, int *argidx, char **argv,
 label_dump_ops:
 		fprintf(stream, "operations := {");
 		for (i = 0; i < sizeof(cli_ops) / sizeof(cli_ops[0]); i++) {
+			if (cli_ops[i].hidden == true)
+				continue;
 			if (i == (sizeof(cli_ops) / sizeof(cli_ops[0]) - 1))
 				fprintf(stream, "%s}\n", cli_ops[i].op_name);
 			else
@@ -1089,7 +1100,7 @@ label_dump_ops:
 
 label_dump_objects:
 		fprintf(stream, "objects := {");
-		for (i = KPARSER_NS_METADATA; i < KPARSER_NS_MAX; i++) {
+		for (i = 0; i < KPARSER_NS_MAX; i++) {
 			if (g_namespaces[i] == NULL)
 				continue;
 			fprintf(stream, "%s | ", g_namespaces[i]->name);
@@ -1117,13 +1128,14 @@ print_args:
 					arg = NULL;
 			}
 		}
-		for (i = KPARSER_NS_METADATA; i < KPARSER_NS_MAX; i++) {
+		for (i = 0; i < KPARSER_NS_MAX; i++) {
 			if (g_namespaces[i] == NULL)
 				continue;
 			if (ns && strcmp(g_namespaces[i]->name, ns))
 				continue;
 			fprintf(stream, "%s:[", g_namespaces[i]->name);
-			for (j = 0; j < g_namespaces[i]->arg_tokens_count; j++) {
+			for (j = 0; j < g_namespaces[i]->arg_tokens_count;
+					j++) {
 				token = &g_namespaces[i]->arg_tokens[j];
 				arg_name = token->key_name;
 				if (token->default_template_token)
@@ -1222,15 +1234,9 @@ int do_kparser(int argc, char **argv)
 	for (i = 0; i < sizeof(cli_ops) / sizeof(cli_ops[0]); i++) {
 		if (argc && (argidx <= (argc - 1)) && argv && argv[argidx] &&
 			(matches(argv[argidx], cli_ops[i].op_name) == 0)) {
-			if (!cli_ops[i].op_handler) {
-				fprintf(stdout,
-					"operation `%s` not implemented yet",
-					cli_ops[i].op_name);
-				return ENOTSUP;
-			}
 			argidx++;
-			return cli_ops[i].op_handler(argc, &argidx,
-					(const char **) argv);
+			return do_cli(cli_ops[i].op, argc, &argidx,
+				      (const char **) argv);
 		}
 	}
 
