@@ -19,6 +19,8 @@
 #include "utils.h"
 #include "ip_common.h"
 
+static char *progname = NULL;
+
 // WIP: TODO: use spaces while using arithmatic operators
 extern const struct kparser_global_namespaces *g_namespaces[];
 
@@ -42,7 +44,7 @@ enum {
 
 #define KPARSER_NLM_MAX_LEN 8192
 
-static void usage(FILE *stream, int argc, int *argidx, char **argv,
+static void usage(FILE *stream, bool intro, int argc, int *argidx, char **argv,
 		bool dump_ops, bool dump_objects);
 
 static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
@@ -55,8 +57,11 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 	int type, i, j, k;
 	const char *key;
 
-	fprintf(stdout, "Dumping config for object/namespace:`%s`\n",
-			namespace->name);
+	// fprintf(stdout, "Dumping config for object/namespace:`%s`\n",
+		// 	namespace->name);
+
+	open_json_object(NULL);
+	open_json_object(namespace->name);
 	for (i = 0; i < namespace->arg_tokens_count; i++) {
 		curr_arg = &namespace->arg_tokens[i];
 		key = curr_arg->key_name;
@@ -75,52 +80,64 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 		if (!key)
 			key = curr_arg->key_name;
 
-		if (type == KPARSER_ARG_VAL_ARRAY)
-			fprintf(stdout, "\tArray HKEYs : \n");
-		else
-			fprintf(stdout, "\t`%s` : ", key);
+		if (type == KPARSER_ARG_VAL_ARRAY) {
+			// fprintf(stdout, "\tArray HKEYs : \n");
+			// print_string(PRINT_ANY, "Array HKEYs");
+		} else {
+			// fprintf(stdout, "\t`%s` : ", key);
+			// print_string(PRINT_ANY, key, "%s", key);
+		}
 
 		switch (type) {
 		case KPARSER_ARG_VAL_HYB_KEY_NAME:
 		case KPARSER_ARG_VAL_STR:
-			fprintf(stdout, "%s\n",
+			print_string(PRINT_ANY, key, "%s", (char *)
+			// fprintf(stdout, "%s\n",
 				(char *)(((void *) cmd_arg) + w_offset));
 			break;
 		case KPARSER_ARG_VAL_HYB_KEY_ID:
 		case KPARSER_ARG_VAL_HYB_IDX:
-			fprintf(stdout, "0x%x\n",
+			print_hex(PRINT_ANY, key, "0x%x", 
+			// fprintf(stdout, "0x%x\n",
 				*(__u16 *)(((void *) cmd_arg) + w_offset));
 			break;
 		case KPARSER_ARG_VAL_U8:
-			fprintf(stdout, "0x%x\n",
+			print_hex(PRINT_ANY, key, "0x%x", 
+			//fprintf(stdout, "0x%x\n",
 				*(__u8 *)(((void *) cmd_arg) + w_offset));
 			break;
 		case KPARSER_ARG_VAL_U16:
-			fprintf(stdout, "0x%x\n",
+			print_hex(PRINT_ANY, key, "0x%x", 
+			//fprintf(stdout, "0x%x\n",
 				*(__u16 *)(((void *) cmd_arg) + w_offset));
 			break;
 		case KPARSER_ARG_VAL_U32:
-			fprintf(stdout, "0x%x\n",
+			// fprintf(stdout, "0x%x\n",
+			print_hex(PRINT_ANY, key, "0x%x", 
 				*(__u32 *)(((void *) cmd_arg) + w_offset));
 			break;
 		case KPARSER_ARG_VAL_U64:
-			fprintf(stdout, "0x%llx\n",
+			// fprintf(stdout, "0x%llx\n",
+			print_hex(PRINT_ANY, key, "0x%x", 
 				*(__u64 *)(((void *) cmd_arg) + w_offset));
 			break;
 		case KPARSER_ARG_VAL_SET:
+			// open_json_array(PRINT_JSON, key);
 			for (j = 0; j < curr_arg->value_set_len; j++) {
 				if (memcmp(((void *) cmd_arg) + w_offset,
 					&curr_arg->value_set[j].set_value_enum,
 					w_len))
 					continue;
-				fprintf(stdout, "%s\n",
+				// fprintf(stdout, "%s\n",
+				print_string(PRINT_ANY, key, "%s", (char *)
 					curr_arg->value_set[j].set_value_str);
 			}
+			// close_json_array(PRINT_JSON, NULL);
 			break;
 		case KPARSER_ARG_VAL_ARRAY:
 			if (array_dumped) {
-				fprintf(stdout,
-					"\t\tkey array already dumped\n");
+				// fprintf(stdout,
+				//	"\t\tkey array already dumped\n");
 				break;
 			}
 			if (elem_size != sizeof (*hks)) {
@@ -129,20 +146,29 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 				return;
 			}
 			array_dumped = true;
+			open_json_array(PRINT_JSON, "Array HKEYs");
 			elems = *(size_t *)
 				(((void *) cmd_arg) + elem_counter);
 			hks =  ((void *) cmd_arg) + w_offset;
-			fprintf(stdout, "\t\tarray len:%lu\n", elems);
+			// fprintf(stdout, "\t\tarray len:%lu\n", elems);
 			for (k = 0; k < elems; k++) {
-				fprintf(stdout, "\t\thkey[%d] : {%s:0x%x}\n",
-						k, hks[k].name, hks[k].id);
+				open_json_object(NULL);
+				print_string(PRINT_ANY, "name", "%s",
+						hks[k].name);
+				print_hex(PRINT_ANY, "id", "0x%x", hks[k].id);
+				close_json_object();
+				// fprintf(stdout, "\t\thkey[%d] : {%s:0x%x}\n",
 			}
+			close_json_array(PRINT_JSON, NULL);
 			break;
 		default:
-			printf("not supported\n");
+			printf("not supported type:%d\n", type);
 			break;
 		}
 	}
+	close_json_object();
+	close_json_object();
+	// delete_json_obj();
 }
 
 static void dump_cmd_rsp(const struct kparser_global_namespaces *namespace,
@@ -157,13 +183,19 @@ static void dump_cmd_rsp(const struct kparser_global_namespaces *namespace,
 		return;
 	}
 
-	fprintf(stdout, "rsp:ret:%d, msg:%s, objs:%lu\n",
-			rsp->op_ret_code, rsp->err_str_buf, rsp->objects_len);
+	new_json_obj(json);
+	open_json_object(NULL);
+	open_json_object("exec summary");
+	print_hex(PRINT_ANY, "op_ret_code", "%d", rsp->op_ret_code);
+	print_string(PRINT_ANY, "err_str_buf", "%s", (char *) rsp->err_str_buf);
+	print_hex(PRINT_ANY, "objects_len", "%d", rsp->objects_len);
+	close_json_object();
+	close_json_object();
 
 	cmd_rsp_size -= sizeof(*rsp);
 
 	if (rsp->op_ret_code == 0) {
-		fprintf(stdout, "rsp:obj dump starts\n");
+		// fprintf(stdout, "rsp:obj dump starts\n");
 		dump_cmd_arg(namespace, &rsp->object);
 		for (i = 0; i < rsp->objects_len; i++) {
 			if (cmd_rsp_size < sizeof(struct kparser_conf_cmd)) {
@@ -178,8 +210,9 @@ static void dump_cmd_rsp(const struct kparser_global_namespaces *namespace,
 				     namespace_id],
 				     &rsp->objects[i]);
 		}
-		fprintf(stdout, "rsp:obj dump ends\n");
+		// fprintf(stdout, "rsp:obj dump ends\n");
 	}
+	delete_json_obj();
 }
 
 static inline bool parse_cmd_line_key_val_str(int argc, int *argidx,
@@ -505,11 +538,36 @@ static int32_t exec_cmd(uint8_t cmd, int32_t req_attr, int32_t rsp_attr,
 	return 0;
 }
 
-static int do_cli_ns(
-		const struct kparser_global_namespaces *namespace,
+#define INCOMPATIBLE_KEY_CHECK						\
+do {									\
+	const char *err_key_str = NULL;					\
+	int i, j;							\
+									\
+	for (i = 0; i < incompatible_keys_len; i++) {			\
+		if (!incompatible_keys[i] || err_key_str)		\
+			break;						\
+		for (j = 0; j < argc; j += 2) {				\
+			if (argv[j] &&					\
+				(matches(incompatible_keys[i],		\
+					 argv[j]) == 0)) {		\
+				err_key_str = argv[j];			\
+				break;					\
+			}						\
+		}							\
+	}								\
+	if (!err_key_str)						\
+		break;							\
+	fprintf(stderr, "key `%s` is not compatible with key `%s`\n",	\
+			err_key_str, key);				\
+	rc = EINVAL;							\
+	goto out;							\
+} while(0)
+
+static int __do_cli(const struct kparser_global_namespaces *namespace,
 		int op, int argc, int *argidx, const char **argv,
 		const char *hybrid_token)
 {
+	int ns_keys_bvs[16], type, elem_type, tbidx = -1, key_start_idx = 0;
 	bool ret = true, value_err = false, ignore_min_max = false;
 	const struct kparser_arg_key_val_token *curr_arg;
 	size_t *dst_array_size, elem_offset, elem_size;
@@ -517,17 +575,19 @@ static int do_cli_ns(
 	char types_buf[KPARSER_SET_VAL_LEN_MAX];
 	size_t w_offset, w_len, cmd_arg_len;
 	size_t offset_adjust, elem_counter;
-	const char *key, *dependent_Key;
 	char tbn[KPARSER_MAX_NAME] = {};
 	__u16 tbid = KPARSER_INVALID_ID;
+	const char *key, *dependent_Key;
+	const char **incompatible_keys;
+	size_t incompatible_keys_len;
 	int i, j, rc, op_attr_id;
 	void *scratch_buf = NULL;
 	int other_mandatory_idx;
 	size_t cmd_rsp_size = 0;
 	void *cmd_rsp = NULL;
-	int ns_keys_bvs[16];
-	int type, elem_type;
-	int tbidx = -1;
+
+	if (argidx && *argidx > 0)
+		key_start_idx = *argidx;
 
 	if (hybrid_token) {
 		ret = parse_element(hybrid_token, NULL, 0, tbn, sizeof(tbn),
@@ -596,6 +656,11 @@ static int do_cli_ns(
 		type = curr_arg->type;
 		elem_type = curr_arg->elem_type;
 
+		incompatible_keys = (const char **)
+			curr_arg->incompatible_keys;
+		incompatible_keys_len = sizeof(curr_arg->incompatible_keys)/
+			sizeof(curr_arg->incompatible_keys[0]);	
+
 		if (curr_arg->default_template_token )
 			curr_arg = curr_arg->default_template_token;
 
@@ -611,31 +676,39 @@ static int do_cli_ns(
 		case KPARSER_ARG_VAL_HYB_KEY_NAME:
 			if (!hybrid_token)
 				break;
-			if (strlen(tbn))
+			if (strlen(tbn)) {
 				memcpy(((void *) cmd_arg) + w_offset, tbn,
 						strlen(tbn) + 1);
-			else
-				memcpy(((void *) cmd_arg) + w_offset,
-						curr_arg->default_val,
-						curr_arg->default_val_size);
+				INCOMPATIBLE_KEY_CHECK;
+			} else {
+				if (curr_arg->default_val &&
+						curr_arg->default_val_size) {
+					memcpy(((void *) cmd_arg) + w_offset,
+							curr_arg->default_val,
+							curr_arg->
+							default_val_size);
+				}
+			}
 			break;
 
 		case KPARSER_ARG_VAL_HYB_KEY_ID:
 			if (!hybrid_token)
 				break;
-			if (tbid != KPARSER_INVALID_ID)
+			if (tbid != KPARSER_INVALID_ID) {
 				memcpy(((void *) cmd_arg) + w_offset, &tbid,
 						w_len);
-			else
+				INCOMPATIBLE_KEY_CHECK;
+			} else
 				memcpy(((void *) cmd_arg) + w_offset,
 						&curr_arg->def_value, w_len);
 			break;
 
 		case KPARSER_ARG_VAL_HYB_IDX:
-			if (tbidx != -1)
+			if (tbidx != -1) {
 				memcpy(((void *) cmd_arg) + w_offset,
 						&tbidx, w_len);
-			else
+				INCOMPATIBLE_KEY_CHECK;
+			} else
 				memcpy(((void *) cmd_arg) + w_offset,
 						&curr_arg->def_value, w_len);
 			break;
@@ -653,6 +726,7 @@ static int do_cli_ns(
 					rc = EINVAL;
 					goto out;
 				}
+				INCOMPATIBLE_KEY_CHECK;
 				clearbit(ns_keys_bvs, i);
 				break;
 			}
@@ -664,8 +738,10 @@ static int do_cli_ns(
 				rc = EINVAL;
 				goto out;
 			}
-			memcpy(((void *) cmd_arg) + w_offset,
-					curr_arg->default_val, w_len);
+			if (curr_arg->default_val &&
+					curr_arg->default_val_size)
+				memcpy(((void *) cmd_arg) + w_offset,
+						curr_arg->default_val, w_len);
 			ret = true;
 			break;
 
@@ -687,6 +763,7 @@ static int do_cli_ns(
 					rc = EINVAL;
 					goto out;
 				}
+				INCOMPATIBLE_KEY_CHECK;
 				clearbit(ns_keys_bvs, i);
 				break;
 			}
@@ -736,6 +813,7 @@ static int do_cli_ns(
 					memcpy(((void *) cmd_arg) + w_offset,
 						&curr_arg->value_set[j].
 							set_value_enum, w_len);
+					INCOMPATIBLE_KEY_CHECK;
 					clearbit(ns_keys_bvs, i);
 					break;
 				}
@@ -825,6 +903,7 @@ array_parse_start:
 				}
 			}
 
+			INCOMPATIBLE_KEY_CHECK;
 			if ((op == op_update) && curr_arg->immutable) {
 				fprintf(stderr, "object `%s`: "
 						"key:`%s` immutable\n",
@@ -915,7 +994,34 @@ array_parse_start:
 		}
 	}
 
+	for (i = key_start_idx; i < argc; i += 2) {
+		// printf("%s\n", argv[i]);
+		for (j = 0; j < namespace->arg_tokens_count; j++) {
+			curr_arg = &namespace->arg_tokens[j];
+			key = curr_arg->key_name;
+			if (curr_arg->default_template_token )
+				curr_arg = curr_arg->default_template_token;
+			if (!key)
+				key = curr_arg->key_name;
+			if (argv[i] && (matches(argv[i], key) == 0))
+				break;
+		}
+		if (j == namespace->arg_tokens_count) {
+			fprintf(stderr, "%s: Invalid key `%s` in cmdline\n"
+					"check \"%s parser help object %s\""
+					" for all the keys of this object.\n",
+					namespace->name, argv[i],
+					progname, namespace->name);
+			rc = EINVAL;
+			goto out;
+		}
+	}
+
+#if 0
+	new_json_obj(json);
 	dump_cmd_arg(namespace, cmd_arg);
+	delete_json_obj();
+#endif
 
 	rc = exec_cmd(KPARSER_CMD_CONFIGURE, op_attr_id,
 			namespace->rsp_attr_id,
@@ -974,14 +1080,14 @@ static int do_cli(int op, int argc, int *argidx,
 	if (!ns)
 		goto errout;
 
-	for (i = KPARSER_NS_METADATA; i < KPARSER_NS_MAX; i++) {
+	for (i = 0; i < KPARSER_NS_MAX; i++) {
 
 		if (!g_namespaces[i])
 			continue;
 
 		if (matches(ns, g_namespaces[i]->name) == 0) {
 			(*argidx)++;
-			return do_cli_ns(g_namespaces[i],
+			return __do_cli(g_namespaces[i],
 					op, argc, argidx, argv,
 					hybrid_token);
 		}
@@ -989,7 +1095,7 @@ static int do_cli(int op, int argc, int *argidx,
 
 errout:
 	fprintf(stderr, "Invalid namespace/object: %s\n", ns);
-	usage(stderr, 0, NULL, NULL, false, true);
+	usage(stderr, false, 0, NULL, NULL, false, true);
 	return EINVAL;
 }
 
@@ -1043,7 +1149,7 @@ static const char *arg_val_type_str[] =
 	[KPARSER_ARG_VAL_INVALID] = "end of valid values"
 };
 
-static void usage(FILE *stream, int argc, int *argidx, char **argv,
+static void usage(FILE *stream, bool intro, int argc, int *argidx, char **argv,
 		bool dump_ops, bool dump_objects)
 {
 	const struct kparser_arg_key_val_token *token;
@@ -1057,11 +1163,18 @@ static void usage(FILE *stream, int argc, int *argidx, char **argv,
 	if (dump_objects)
 		goto label_dump_objects;
 
-	fprintf(stream,
-		"Usage: ip kparser [ operations ] [ objects ] [ args ]\n");
+	if (intro)
+		fprintf(stream,
+		"Usage: \"%s parser [ operations ] [ objects ] [ args ]\"\n"
+		"More help 1: \"%s parser help operations\"\n"
+		"More help 2: \"%s parser help objects\"\n"
+		"More help 3: \"%s parser help objects <objname>\"\n"
+		"More help 4: \"%s parser help objects <objname> <keyname>\"\n"
+		"More help 5: \"%s parser help args\"\n",
+		progname, progname, progname, progname, progname, progname);
 
 	if (!argc || !argidx || !argv) {
-		fprintf(stream, "type `help` for more details on usage\n");
+		// fprintf(stream, "type `help` for more details on usage\n");
 		return;
 	}
 
@@ -1147,11 +1260,21 @@ print_args:
 				fprintf(stream, "\n\t{");
 				fprintf(stream,
 					"\n\t\tname:%s, type:%s,"
-					" mandatory:%d, details:%s",
+					" mandatory:%d, details:%s,"
+					" incompatible keys: [",
 					arg_name,
 					arg_val_type_str[token->type],	
 					token->mandatory,
 					token->help_msg);
+				for (k = 0; k < sizeof(token->
+					incompatible_keys) / sizeof(token->
+						incompatible_keys[0]); k++) {
+					if (!token->incompatible_keys[k])
+						break;
+					fprintf(stream, "%s,",
+						token->incompatible_keys[k]);
+				}
+				fprintf(stream, "]");
 				switch(token->type) {
 				case KPARSER_ARG_VAL_STR:
 					fprintf(stream,
@@ -1215,20 +1338,23 @@ int do_kparser(int argc, char **argv)
 	int argidx = 0;
 	int i;
 
+	// only safe when ip/tc increments argv before the handler call
+	progname = argv[-2];
+
 	if (argc < 1) {
-		usage(stderr, 0, NULL, NULL, false, false);
+		usage(stderr, true, 0, NULL, NULL, false, false);
 		return EINVAL;
 	}
 
 	if (matches(*argv, "help") == 0) {
 		argidx++;
-		usage(stdout, argc, &argidx, argv, false, false);
+		usage(stdout, true, argc, &argidx, argv, false, false);
 		return 0;
 	}
 
 	if (genl_init_handle(&genl_rth, KPARSER_GENL_NAME, &genl_family)) {
 		fprintf(stderr, "genl_init_handle() failed!\n");
-		// return EIO;
+		return EIO;
 	}
 
 	for (i = 0; i < sizeof(cli_ops) / sizeof(cli_ops[0]); i++) {
@@ -1241,7 +1367,7 @@ int do_kparser(int argc, char **argv)
 	}
 
 	fprintf(stderr, "Invalid operation: %s\n", argv[argidx]);
-	usage(stderr, 0, NULL, NULL, true, false);
-	fprintf(stderr, "Try \"<> kparser help\" for more details\n");
+	usage(stderr, false, 0, NULL, NULL, true, false);
+	fprintf(stderr, "Try \"%s parser help\" for more details\n", progname);
 	return EINVAL;
 }

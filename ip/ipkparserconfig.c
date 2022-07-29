@@ -14,7 +14,7 @@
 #include <linux/kparser.h>
 #include "utils.h"
 
-#define KPARSER_ARG_U(bits, key, member, min, max, def, msg)		\
+#define KPARSER_ARG_U(bits, key, member, min, max, def, msg, ...)	\
 	{								\
 		.type = KPARSER_ARG_VAL_U##bits,			\
 		.key_name = key,					\
@@ -26,6 +26,7 @@
 		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->	\
 				member),				\
 		.help_msg = msg,					\
+		.incompatible_keys = { __VA_ARGS__ },			\
 	}
 
 #define KPARSER_ARG_HKEY_NAME(key, member)				\
@@ -61,8 +62,6 @@
 		.w_offset = offsetof(struct kparser_conf_cmd, member),	\
 		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->	\
 				member),				\
-		.default_val_size = strlen(def) + 1,			\
-		.default_val = def,					\
 		.str_arg_len_max = KPARSER_MAX_NAME,			\
 		.help_msg = "<type hybrid key name>",			\
 	}
@@ -122,8 +121,6 @@ static const struct kparser_arg_key_val_token hkey_name = {
 		.key_name = "name",
 		.semi_optional = true,
 		.other_mandatory_idx = -1,
-		.default_val_size = strlen(KPARSER_DEF_NAME_PREFIX) + 1,
-		.default_val = KPARSER_DEF_NAME_PREFIX,
 		.str_arg_len_max = KPARSER_MAX_NAME,
 		.help_msg = "strign name of hash key",
 };
@@ -327,6 +324,7 @@ static const struct kparser_arg_key_val_token cond_exprs_tables_key_vals[] = {
 			"condexprs.id", table_conf.elem_key),
 };
 
+
 static const struct kparser_arg_key_val_token counter_key_vals[] = {
 	[0] {
 		.default_template_token = &hkey_name,
@@ -425,7 +423,7 @@ static const struct kparser_arg_set md_types[] = {
 		.set_value_enum = KPARSER_METADATA_RETURN_CODE,
 	},
 	{
-		.set_value_str = "counter",
+		.set_value_str = "counter_mode",
 		.set_value_enum = KPARSER_METADATA_COUNTER,
 	},
 	{
@@ -494,7 +492,8 @@ static const struct kparser_arg_key_val_token md_key_vals[] = {
 	},
 	KPARSER_ARG_BOOL("is_frame", md_conf.frame, false),
 	KPARSER_ARG_BOOL("is_endian_needed", md_conf.e_bit, false),
-	KPARSER_ARG_BOOL("is_bit_offset", md_conf.bit_offset, false),
+	// KPARSER_ARG_BOOL("is_bit_offset", md_conf.bit_offset, false),
+	KPARSER_ARG_BOOL("set_high_bit", md_conf.set_high_bit, false),
 	KPARSER_ARG_U(8, "counter_id", md_conf.cntr, 0, 0xff, 0,
 			"<dummy msg>"),
 	KPARSER_ARG_U(8, "counter_data", md_conf.cntr_data, 0, 0xff, 0,
@@ -506,8 +505,16 @@ static const struct kparser_arg_key_val_token md_key_vals[] = {
 	KPARSER_ARG_U(64, "doff", md_conf.doff, 0, 0xffffffff, 0,
 			"destination offset"),
 	KPARSER_ARG_U(64, "len", md_conf.len, 0, 0xffffffff, 2, "length"),
-	KPARSER_ARG_U(64, "add_off", md_conf.add_off, 0, 0xffffffff, 0,
+	KPARSER_ARG_U(64, "add_off", md_conf.add_off,
+			KPARSER_METADATA_OFFSET_MIN,
+			KPARSER_METADATA_OFFSET_MAX,
+			KPARSER_METADATA_OFFSET_INVALID,
 			"add_offset"),
+	KPARSER_ARG_U(64, "add_bit_off", md_conf.add_bit_off,
+			KPARSER_METADATA_OFFSET_MIN,
+			KPARSER_METADATA_OFFSET_MAX,
+			KPARSER_METADATA_OFFSET_INVALID,
+			"add_bit_offset", "add_off", "soff"),
 };
 
 static const struct kparser_arg_key_val_token mdl_key_vals[] = {
