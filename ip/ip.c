@@ -103,7 +103,7 @@ static const struct cmd {
 	{ "l2tp",	do_ipl2tp },
 	{ "fou",	do_ipfou },
 	{ "ila",	do_ipila },
-	{ "kparser",	do_kparser },
+	{ "parser",	do_kparser },
 	{ "macsec",	do_ipmacsec },
 	{ "tunnel",	do_iptunnel },
 	{ "tunl",	do_iptunnel },

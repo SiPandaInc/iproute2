@@ -52,6 +52,7 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 {
 	size_t w_offset, w_len, elem_counter, elem_size, elems;
 	const struct kparser_arg_key_val_token *curr_arg;
+	enum kparser_print_id print_id;
 	bool array_dumped = false;
 	struct kparser_hkey *hks;
 	int type, i, j, k;
@@ -80,59 +81,68 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 		if (!key)
 			key = curr_arg->key_name;
 
-		if (type == KPARSER_ARG_VAL_ARRAY) {
-			// fprintf(stdout, "\tArray HKEYs : \n");
-			// print_string(PRINT_ANY, "Array HKEYs");
-		} else {
-			// fprintf(stdout, "\t`%s` : ", key);
-			// print_string(PRINT_ANY, key, "%s", key);
-		}
+		print_id = curr_arg->print_id;
 
 		switch (type) {
 		case KPARSER_ARG_VAL_HYB_KEY_NAME:
 		case KPARSER_ARG_VAL_STR:
-			print_string(PRINT_ANY, key, "%s", (char *)
-			// fprintf(stdout, "%s\n",
+			print_string(PRINT_ANY, key, "", (char *)
 				(char *)(((void *) cmd_arg) + w_offset));
 			break;
 		case KPARSER_ARG_VAL_HYB_KEY_ID:
 		case KPARSER_ARG_VAL_HYB_IDX:
-			print_hex(PRINT_ANY, key, "0x%x", 
-			// fprintf(stdout, "0x%x\n",
+			print_hex(PRINT_ANY, key, "", 
 				*(__u16 *)(((void *) cmd_arg) + w_offset));
 			break;
 		case KPARSER_ARG_VAL_U8:
-			print_hex(PRINT_ANY, key, "0x%x", 
-			//fprintf(stdout, "0x%x\n",
-				*(__u8 *)(((void *) cmd_arg) + w_offset));
+			if (print_id == KPARSER_PRINT_HEX) 
+				print_0xhex(PRINT_ANY, key, "",
+						*(__u8 *)(((void *) cmd_arg) +
+							w_offset));
+			else
+				print_hu(PRINT_ANY, key, "", 
+						*(__u8 *)(((void *) cmd_arg) +
+							w_offset));
 			break;
 		case KPARSER_ARG_VAL_U16:
-			print_hex(PRINT_ANY, key, "0x%x", 
-			//fprintf(stdout, "0x%x\n",
-				*(__u16 *)(((void *) cmd_arg) + w_offset));
+			if (print_id == KPARSER_PRINT_HEX) 
+				print_0xhex(PRINT_ANY, key, "",
+						*(__u16 *)(((void *) cmd_arg) +
+							w_offset));
+			else
+				print_hu(PRINT_ANY, key, "", 
+						*(__u16 *)(((void *) cmd_arg) +
+							w_offset));
 			break;
 		case KPARSER_ARG_VAL_U32:
-			// fprintf(stdout, "0x%x\n",
-			print_hex(PRINT_ANY, key, "0x%x", 
-				*(__u32 *)(((void *) cmd_arg) + w_offset));
+			if (print_id == KPARSER_PRINT_HEX) 
+				print_0xhex(PRINT_ANY, key, "",
+						*(__u32 *)(((void *) cmd_arg) +
+							w_offset));
+			else
+				print_uint(PRINT_ANY, key, "",
+						*(__u32 *)(((void *) cmd_arg) +
+							w_offset));
 			break;
 		case KPARSER_ARG_VAL_U64:
-			// fprintf(stdout, "0x%llx\n",
-			print_hex(PRINT_ANY, key, "0x%x", 
-				*(__u64 *)(((void *) cmd_arg) + w_offset));
+			if (print_id == KPARSER_PRINT_HEX) 
+				print_0xhex(PRINT_ANY, key, "",
+						*(__u32 *)(((void *) cmd_arg) +
+							w_offset));
+			else
+				print_lluint(PRINT_ANY, key, "",
+						*(__u64 *)(((void *) cmd_arg) +
+							w_offset));
 			break;
 		case KPARSER_ARG_VAL_SET:
-			// open_json_array(PRINT_JSON, key);
 			for (j = 0; j < curr_arg->value_set_len; j++) {
 				if (memcmp(((void *) cmd_arg) + w_offset,
 					&curr_arg->value_set[j].set_value_enum,
 					w_len))
 					continue;
-				// fprintf(stdout, "%s\n",
-				print_string(PRINT_ANY, key, "%s", (char *)
+				print_string(PRINT_ANY, key, "", (char *)
 					curr_arg->value_set[j].set_value_str);
 			}
-			// close_json_array(PRINT_JSON, NULL);
 			break;
 		case KPARSER_ARG_VAL_ARRAY:
 			if (array_dumped) {
@@ -153,11 +163,10 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 			// fprintf(stdout, "\t\tarray len:%lu\n", elems);
 			for (k = 0; k < elems; k++) {
 				open_json_object(NULL);
-				print_string(PRINT_ANY, "name", "%s",
+				print_string(PRINT_ANY, "name", "",
 						hks[k].name);
-				print_hex(PRINT_ANY, "id", "0x%x", hks[k].id);
+				print_hu(PRINT_ANY, "id", "", hks[k].id);
 				close_json_object();
-				// fprintf(stdout, "\t\thkey[%d] : {%s:0x%x}\n",
 			}
 			close_json_array(PRINT_JSON, NULL);
 			break;
@@ -168,51 +177,81 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 	}
 	close_json_object();
 	close_json_object();
-	// delete_json_obj();
+}
+
+static bool dump_cmd_rsp_object(const struct kparser_cmd_rsp_hdr *rsp,
+	size_t *cmd_rsp_size)
+{
+	const struct kparser_conf_cmd *rconf;
+	int i;
+
+	rconf = (const struct kparser_conf_cmd *)rsp->objects;
+	for (i = 0; i < rsp->objects_len; i++) {
+		if (*cmd_rsp_size < sizeof(struct kparser_conf_cmd)) {
+			fprintf(stderr,
+				"rsp:obj dump err, broken buffer,"
+				"cmd_rsp_size:%lu expctd:%lu\n",
+				*cmd_rsp_size,
+				sizeof(struct kparser_conf_cmd));
+			*cmd_rsp_size = 0;
+			return false;
+		}
+		*cmd_rsp_size = (*cmd_rsp_size) - sizeof(*rconf);
+		rconf = &rsp->objects[i];
+		if ((rconf->namespace_id >= KPARSER_NS_MAX) ||
+				(rconf->namespace_id <= KPARSER_NS_INVALID)) {
+			fprintf(stderr, "invalid object ns id:%d\n",
+					rconf->namespace_id);
+			continue;
+		}
+		dump_cmd_arg(g_namespaces[rconf->namespace_id], rconf);
+	}
+	return true;
 }
 
 static void dump_cmd_rsp(const struct kparser_global_namespaces *namespace,
-		const void *cmd_rsp, size_t cmd_rsp_size)
+		const void *cmd_rsp, size_t *cmd_rsp_size)
 {
 	const struct kparser_cmd_rsp_hdr *rsp = cmd_rsp;
-	int i;
 
-	if (!cmd_rsp || cmd_rsp_size < sizeof(*rsp)) {
-		fprintf(stderr, "%s: size error, %lu instead of %lu\n",
-		namespace->name, cmd_rsp_size, sizeof(*rsp));
+	if (!cmd_rsp || !cmd_rsp_size || *cmd_rsp_size < sizeof(*rsp)) {
+		fprintf(stderr, "size error, %lu instead of %lu=>%lu\n",
+		*cmd_rsp_size, sizeof(*rsp), sizeof(struct kparser_conf_cmd));
+		if (cmd_rsp_size)
+			*cmd_rsp_size = 0;
 		return;
 	}
 
-	new_json_obj(json);
+	if (!namespace) {
+		if ((rsp->object.namespace_id >= KPARSER_NS_MAX) ||
+				(rsp->object.namespace_id <=
+				 KPARSER_NS_INVALID)) {
+			fprintf(stderr, "iinvalid object ns id:%d\n",
+					rsp->object.namespace_id);
+			*cmd_rsp_size = 0;
+			return;
+		}
+		namespace = g_namespaces[rsp->object.namespace_id];
+	}
+
 	open_json_object(NULL);
 	open_json_object("exec summary");
 	print_hex(PRINT_ANY, "op_ret_code", "%d", rsp->op_ret_code);
-	print_string(PRINT_ANY, "err_str_buf", "%s", (char *) rsp->err_str_buf);
-	print_hex(PRINT_ANY, "objects_len", "%d", rsp->objects_len);
+	print_string(PRINT_ANY, "op_desc", "%s", (char *) rsp->err_str_buf);
+	print_hex(PRINT_ANY, "Total objects", "%d", rsp->objects_len + 1);
 	close_json_object();
 	close_json_object();
 
-	cmd_rsp_size -= sizeof(*rsp);
+	(*cmd_rsp_size) = (*cmd_rsp_size) - sizeof(*rsp);
 
 	if (rsp->op_ret_code == 0) {
 		// fprintf(stdout, "rsp:obj dump starts\n");
 		dump_cmd_arg(namespace, &rsp->object);
-		for (i = 0; i < rsp->objects_len; i++) {
-			if (cmd_rsp_size < sizeof(struct kparser_conf_cmd)) {
-				fprintf(stderr,
-					"rsp:obj dump err, broken buffer,"
-					"cmd_rsp_size:%lu expctd:%lu\n",
-					cmd_rsp_size, sizeof(*rsp));
-				return;
-			}
-			cmd_rsp_size -= sizeof(struct kparser_conf_cmd);
-			dump_cmd_arg(g_namespaces[rsp->objects[i].
-				     namespace_id],
-				     &rsp->objects[i]);
+		if (rsp->objects_len) {
+			dump_cmd_rsp_object(rsp, cmd_rsp_size);
 		}
-		// fprintf(stdout, "rsp:obj dump ends\n");
 	}
-	delete_json_obj();
+	// fprintf(stdout, "rsp:obj dump ends\n");
 }
 
 static inline bool parse_cmd_line_key_val_str(int argc, int *argidx,
@@ -567,13 +606,13 @@ static int __do_cli(const struct kparser_global_namespaces *namespace,
 		int op, int argc, int *argidx, const char **argv,
 		const char *hybrid_token)
 {
+	size_t cmd_rsp_size = 0, old_cmd_rsp_size, w_offset, w_len, cmd_arg_len;
 	int ns_keys_bvs[16], type, elem_type, tbidx = -1, key_start_idx = 0;
 	bool ret = true, value_err = false, ignore_min_max = false;
 	const struct kparser_arg_key_val_token *curr_arg;
 	size_t *dst_array_size, elem_offset, elem_size;
 	struct kparser_conf_cmd *cmd_arg = NULL;
 	char types_buf[KPARSER_SET_VAL_LEN_MAX];
-	size_t w_offset, w_len, cmd_arg_len;
 	size_t offset_adjust, elem_counter;
 	char tbn[KPARSER_MAX_NAME] = {};
 	__u16 tbid = KPARSER_INVALID_ID;
@@ -583,7 +622,6 @@ static int __do_cli(const struct kparser_global_namespaces *namespace,
 	int i, j, rc, op_attr_id;
 	void *scratch_buf = NULL;
 	int other_mandatory_idx;
-	size_t cmd_rsp_size = 0;
 	void *cmd_rsp = NULL;
 
 	if (argidx && *argidx > 0)
@@ -954,7 +992,7 @@ array_parse_start:
 
 	for (i = 0; i < namespace->arg_tokens_count; i++) {
 		curr_arg = &namespace->arg_tokens[i];
-		if (curr_arg->semi_optional == false)
+		if ((op == op_read) || (curr_arg->semi_optional == false))
 			continue;
 		other_mandatory_idx = curr_arg->other_mandatory_idx;
 		if (other_mandatory_idx == -1)
@@ -1038,7 +1076,13 @@ array_parse_start:
 		goto out;
 	}
 
-	dump_cmd_rsp(namespace, cmd_rsp, cmd_rsp_size);
+	old_cmd_rsp_size = cmd_rsp_size;
+	new_json_obj(json);
+	while (cmd_rsp_size >= sizeof(*cmd_rsp)) {
+		dump_cmd_rsp(NULL, cmd_rsp + (old_cmd_rsp_size - cmd_rsp_size),
+				&cmd_rsp_size);
+	}
+	delete_json_obj();
 out:
 	if (cmd_arg)
 		free(cmd_arg);
@@ -1149,6 +1193,7 @@ static const char *arg_val_type_str[] =
 	[KPARSER_ARG_VAL_INVALID] = "end of valid values"
 };
 
+#if 0
 static void usage(FILE *stream, bool intro, int argc, int *argidx, char **argv,
 		bool dump_ops, bool dump_objects)
 {
@@ -1332,6 +1377,200 @@ print_args:
 		}
 	}
 }
+#else
+static void usage(FILE *stream, bool intro, int argc, int *argidx, char **argv,
+		bool dump_ops, bool dump_objects)
+{
+	const struct kparser_arg_key_val_token *token;
+	const char *arg_name, *ns = NULL, *arg = NULL;
+	const char *default_set_value = NULL, *empty = "NULL";
+	int i, j, k;
+
+	if (dump_ops)
+		goto label_dump_ops;
+
+	if (dump_objects)
+		goto label_dump_objects;
+
+	if (intro)
+		fprintf(stream,
+		"Usage: \"%s parser [ operations ] [ objects ] [ args ]\"\n"
+		"More help 1: \"%s parser help operations\"\n"
+		"More help 2: \"%s parser help objects\"\n"
+		"More help 3: \"%s parser help objects <objname>\"\n"
+		"More help 4: \"%s parser help objects <objname> <keyname>\"\n"
+		"More help 5: \"%s parser help args\"\n",
+		progname, progname, progname, progname, progname, progname);
+
+	if (!argc || !argidx || !argv) {
+		// fprintf(stream, "type `help` for more details on usage\n");
+		return;
+	}
+
+	if ((argc && argidx && (*argidx <= (argc - 1)) && argv &&
+		argv[*argidx] && (matches(argv[*argidx], "operations") ==
+			0)) || argc == 0) {
+		if (argidx)
+			(*argidx)++;
+label_dump_ops:
+		fprintf(stream, "operations := {");
+		for (i = 0; i < sizeof(cli_ops) / sizeof(cli_ops[0]); i++) {
+			if (cli_ops[i].hidden == true)
+				continue;
+			if (i == (sizeof(cli_ops) / sizeof(cli_ops[0]) - 1))
+				fprintf(stream, "%s}\n", cli_ops[i].op_name);
+			else
+				fprintf(stream, "%s | ", cli_ops[i].op_name);
+		}
+		if (dump_ops)
+			return;
+	}
+
+	if ((argc && argidx && (*argidx <= (argc - 1)) && argv &&
+		argv[*argidx] && (matches(argv[*argidx], "objects") == 0)) ||
+			argc == 0) {
+
+		if (argidx)
+			(*argidx)++;
+
+		ns = argv[*argidx];
+		if (argidx)
+			(*argidx)++;
+		if (ns && strcmp(ns, "args"))
+			goto print_args;
+		ns = NULL;
+
+label_dump_objects:
+		fprintf(stream, "objects := {");
+		for (i = 0; i < KPARSER_NS_MAX; i++) {
+			if (g_namespaces[i] == NULL)
+				continue;
+			fprintf(stream, "%s | ", g_namespaces[i]->name);
+		}
+		fprintf(stream, "}\n");
+		if (dump_objects)
+			return;
+	}
+
+	if ((argc && argidx && (*argidx <= (argc - 1)) && argv &&
+		argv[*argidx] && (matches(argv[*argidx], "args") == 0)) ||
+			argc == 0) {
+		if (argidx)
+			(*argidx)++;
+		fprintf(stream,
+			"\nAll possible args for each objects/namespaces:\n");
+print_args:
+		if (*argidx <= (argc - 1) && argv[*argidx]) {
+			arg = argv[*argidx];
+			if (matches(arg, "arg") == 0) {
+				(*argidx)++;
+				if (*argidx <= (argc - 1) && argv[*argidx])
+					arg = argv[*argidx];
+				else
+					arg = NULL;
+			}
+		}
+		for (i = 0; i < KPARSER_NS_MAX; i++) {
+			if (g_namespaces[i] == NULL)
+				continue;
+			if (ns && strcmp(g_namespaces[i]->name, ns))
+				continue;
+			new_json_obj(json);
+			open_json_object(NULL);
+			open_json_object(g_namespaces[i]->name);
+			for (j = 0; j < g_namespaces[i]->arg_tokens_count;
+					j++) {
+				token = &g_namespaces[i]->arg_tokens[j];
+				arg_name = token->key_name;
+				if (token->default_template_token)
+					token = token->default_template_token;
+				if (!arg_name)
+					arg_name = token->key_name;
+				if (arg && matches(arg, arg_name))
+					continue;
+				open_json_object(arg_name);
+				print_string(PRINT_ANY, "type", "",
+						arg_val_type_str[token->type]);
+				print_uint(PRINT_ANY, "mandatory", "",
+						token->mandatory);
+				print_string(PRINT_ANY, "help_msg", "",
+						token->help_msg);
+				open_json_array(PRINT_JSON, "incompatible_keys");
+				for (k = 0; k < sizeof(token->
+					incompatible_keys) / sizeof(token->
+						incompatible_keys[0]); k++) {
+					if (!token->incompatible_keys[k])
+						break;
+					print_string(PRINT_JSON, NULL, "%s", 
+						token->incompatible_keys[k]);
+				}
+				close_json_array(PRINT_JSON, NULL);
+				switch(token->type) {
+				case KPARSER_ARG_VAL_STR:
+					if (token->default_val)
+					print_string(PRINT_ANY, "default", "",
+							token->default_val);
+					else
+					print_string(PRINT_ANY, "default", "",
+							empty);
+					print_uint(PRINT_ANY, "maxlen", "",
+							token->str_arg_len_max);
+					break;
+				case KPARSER_ARG_VAL_U8:
+				case KPARSER_ARG_VAL_U16:
+				case KPARSER_ARG_VAL_U32:
+				case KPARSER_ARG_VAL_U64:
+					print_uint(PRINT_ANY, "min", "",
+							token->min_value);
+					print_uint(PRINT_ANY, "def", "",
+							token->def_value);
+					print_uint(PRINT_ANY, "max", "",
+							token->max_value);
+					break;
+				case KPARSER_ARG_VAL_SET:
+					open_json_array(PRINT_JSON, "set");
+					for (k = 0; k < token->value_set_len;
+							k++) {
+						print_string(PRINT_ANY, NULL,
+								"%s",
+							token->value_set[k].
+							set_value_str);
+						if (token->value_set[k].
+							set_value_enum ==
+							token->def_value_enum)
+							default_set_value =
+							token->value_set[k].
+							set_value_str;
+					}
+					close_json_array(PRINT_JSON, NULL);
+					print_string(PRINT_ANY, "default", "",
+							default_set_value);
+					break;
+				case KPARSER_ARG_VAL_BOOL:
+				case KPARSER_ARG_VAL_FLAG:
+				case KPARSER_ARG_VAL_ARRAY:
+				case KPARSER_ARG_VAL_HYB_KEY_NAME:
+				case KPARSER_ARG_VAL_HYB_KEY_ID:
+				case KPARSER_ARG_VAL_HYB_IDX:
+				default:
+					break;
+				}
+				close_json_object();
+				if (arg)
+					break;
+			}
+			close_json_object();
+			close_json_object();
+			delete_json_obj();
+			if (arg && j == g_namespaces[i]->arg_tokens_count)
+				fprintf(stream,
+					"\n\t{`%s`:invalid arg name}", arg);
+			// fprintf(stream, "\n]\n");
+		}
+	}
+}
+
+#endif
 
 int do_kparser(int argc, char **argv)
 {

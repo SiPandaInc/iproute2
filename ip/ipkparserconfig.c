@@ -29,6 +29,22 @@
 		.incompatible_keys = { __VA_ARGS__ },			\
 	}
 
+#define KPARSER_ARG_U_HEX(bits, key, member, min, max, def, msg, ...)	\
+	{								\
+		.type = KPARSER_ARG_VAL_U##bits,			\
+		.key_name = key,					\
+		.str_arg_len_max = KPARSER_MAX_STR_LEN_U##bits,		\
+		.min_value = min,					\
+		.def_value = def,					\
+		.max_value = max,					\
+		.print_id = KPARSER_PRINT_HEX,				\
+		.w_offset = offsetof(struct kparser_conf_cmd, member),	\
+		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->	\
+				member),				\
+		.help_msg = msg,					\
+		.incompatible_keys = { __VA_ARGS__ },			\
+	}
+
 #define KPARSER_ARG_HKEY_NAME(key, member)				\
 	{								\
 		.key_name = key,					\
@@ -73,6 +89,7 @@
 		.min_value = min,					\
 		.def_value = def,					\
 		.max_value = max,					\
+		.print_id = KPARSER_PRINT_HEX,				\
 		.w_offset = offsetof(struct kparser_conf_cmd, member),	\
 		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->	\
 				member),				\
@@ -134,6 +151,7 @@ static const struct kparser_arg_key_val_token hkey_id = {
 		.min_value = KPARSER_USER_ID_MIN,
 		.def_value = KPARSER_INVALID_ID,
 		.max_value = KPARSER_USER_ID_MAX,
+		.print_id = KPARSER_PRINT_HEX,
 		.help_msg = "16 bit hash key id",
 };
 
@@ -200,8 +218,9 @@ static const struct kparser_arg_key_val_token cond_exprs_vals[] = {
 			"start offset"),
 	KPARSER_ARG_U(8, "len", cond_conf.config.length, 0, 0xff, 0,
 			"length"),
-	KPARSER_ARG_U(32, "mask", cond_conf.config.mask, 0,
-			0xffffffff, 0, "length"),
+	KPARSER_ARG_U_HEX(32, "mask", cond_conf.config.mask, 0,
+			KPARSER_DEFAULT_U32_MASK, KPARSER_DEFAULT_U32_MASK,
+			"length"),
 	KPARSER_ARG_U(32, "value", cond_conf.config.value, 0,
 			0xffffffff, 0, "length"),
 };
@@ -510,7 +529,7 @@ static const struct kparser_arg_key_val_token md_key_vals[] = {
 			KPARSER_METADATA_OFFSET_MAX,
 			KPARSER_METADATA_OFFSET_INVALID,
 			"add_offset"),
-	KPARSER_ARG_U(64, "add_bit_off", md_conf.add_bit_off,
+	KPARSER_ARG_U_HEX(64, "add_bit_off", md_conf.add_bit_off,
 			KPARSER_METADATA_OFFSET_MIN,
 			KPARSER_METADATA_OFFSET_MAX,
 			KPARSER_METADATA_OFFSET_INVALID,
@@ -661,9 +680,10 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] = {
 			0, 0xff, 0, "size"),
 	KPARSER_ARG_BOOL("pflen_endian",
 			PLAIN_NODE.proto_node.ops.pflen.endian, false),
-	KPARSER_ARG_U(32, "pflen_mask",
+	KPARSER_ARG_U_HEX(32, "pflen_mask",
 			PLAIN_NODE.proto_node.ops.pflen.mask,
-			0, 0xffffffff, 0, "dummy_help"),
+			0, KPARSER_DEFAULT_U32_MASK, KPARSER_DEFAULT_U32_MASK,
+			"dummy_help"),
 	KPARSER_ARG_U(8, "pflen_right_shift",
 			PLAIN_NODE.proto_node.ops.pflen.right_shift,
 			0, 0xff, 0, "dummy_help"),
@@ -673,15 +693,13 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] = {
 	KPARSER_ARG_U(8, "pflen_add_value",
 			PLAIN_NODE.proto_node.ops.pflen.add_value,
 			0, 0xff, 0, "dummy_help"),
-	KPARSER_ARG_BOOL("next_proto_parameterized",
-			PLAIN_NODE.proto_node.ops.next_proto_parameterized,
-			false),
 	KPARSER_ARG_U(16, "pfnext_src_off",
 			PLAIN_NODE.proto_node.ops.pfnext_proto.src_off,
 			0, 0xffff, 0, "dummy_help"),
-	KPARSER_ARG_U(16, "pfnext_mask",
+	KPARSER_ARG_U_HEX(16, "pfnext_mask",
 			PLAIN_NODE.proto_node.ops.pfnext_proto.mask,
-			0, 0xffff, 0, "dummy_help"),
+			0, KPARSER_DEFAULT_U16_MASK, KPARSER_DEFAULT_U16_MASK,
+			"dummy_help"),
 	KPARSER_ARG_U(8, "pfnext_size",
 			PLAIN_NODE.proto_node.ops.pfnext_proto.size,
 			0, 0xff, 0, "dummy_help"),
@@ -706,10 +724,11 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] = {
 	KPARSER_ARG_BOOL("tlvs_ops_off_endian",
 			TLVS_NODE.proto_node.
 			ops.pfstart_offset.endian, false),
-	KPARSER_ARG_U(32, "tlvs_ops_off_mask",
+	KPARSER_ARG_U_HEX(32, "tlvs_ops_off_mask",
 			TLVS_NODE.proto_node.
 			ops.pfstart_offset.mask,
-			0, 0xffffffff, 0, "dummy_help"),
+			0, KPARSER_DEFAULT_U32_MASK, KPARSER_DEFAULT_U32_MASK,
+			"dummy_help"),
 	KPARSER_ARG_U(8, "tlvs_ops_off_right_shift",
 			TLVS_NODE.proto_node.
 			ops.pfstart_offset.right_shift,
@@ -737,10 +756,11 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] = {
 	KPARSER_ARG_BOOL("tlvs_ops_len_endian",
 			TLVS_NODE.proto_node.
 			ops.pflen.endian, false),
-	KPARSER_ARG_U(32, "tlvs_ops_len_mask",
+	KPARSER_ARG_U_HEX(32, "tlvs_ops_len_mask",
 			TLVS_NODE.proto_node.
 			ops.pflen.mask,
-			0, 0xffffffff, 0, "dummy_help"),
+			0, KPARSER_DEFAULT_U32_MASK, KPARSER_DEFAULT_U32_MASK,
+			"dummy_help"),
 	KPARSER_ARG_U(8, "tlvs_ops_len_right_shift",
 			TLVS_NODE.proto_node.
 			ops.pflen.right_shift,
@@ -760,9 +780,10 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] = {
 	KPARSER_ARG_U(16, "tlvs_type_src_off",
 			TLVS_NODE.proto_node.
 			ops.pftype.src_off, 0, 0xffff, 0, "dummy_help"),
-	KPARSER_ARG_U(16, "tlvs_type_mask",
+	KPARSER_ARG_U_HEX(16, "tlvs_type_mask",
 			TLVS_NODE.proto_node.
-			ops.pftype.mask, 0, 0xffff, 0, "dummy_help"),
+			ops.pftype.mask, 0, KPARSER_DEFAULT_U16_MASK,
+			KPARSER_DEFAULT_U16_MASK, "dummy_help"),
 	KPARSER_ARG_U(8, "tlvs_type_size",
 			TLVS_NODE.proto_node.
 			ops.pftype.size, 0, 0xff, 0, "dummy_help"),
@@ -839,9 +860,10 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] = {
 	KPARSER_ARG_U(16, "flags_get_src_off",
 			FLAGS_NODE.proto_node.ops.pfget_flags.src_off,
 			0, 0xffff, 0, "dummy_help"),
-	KPARSER_ARG_U(32, "flags_get_mask",
+	KPARSER_ARG_U_HEX(32, "flags_get_mask",
 			FLAGS_NODE.proto_node.ops.pfget_flags.mask,
-			0, 0xffffffff, 0, "dummy_help"),
+			0, KPARSER_DEFAULT_U32_MASK, KPARSER_DEFAULT_U32_MASK,
+			"dummy_help"),
 	KPARSER_ARG_U(8, "flags_get_size",
 			FLAGS_NODE.proto_node.ops.pfget_flags.size,
 			0, 0xff, 0, "dummy_help"),
@@ -859,9 +881,10 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] = {
 	KPARSER_ARG_BOOL("flags_soff_endian",
 			FLAGS_NODE.proto_node.ops.pfstart_fields_offset.endian,
 			false),
-	KPARSER_ARG_U(32, "flags_soff_mask",
+	KPARSER_ARG_U_HEX(32, "flags_soff_mask",
 			FLAGS_NODE.proto_node.ops.pfstart_fields_offset.mask,
-			0, 0xffffffff, 0, "dummy_help"),
+			0, KPARSER_DEFAULT_U32_MASK, KPARSER_DEFAULT_U32_MASK,
+			"dummy_help"),
 	KPARSER_ARG_U(8, "flags_soff_right_shift",
 			FLAGS_NODE.proto_node.ops.
 			pfstart_fields_offset.right_shift,
@@ -935,9 +958,10 @@ static const struct kparser_arg_key_val_token tlv_parse_node_key_vals[] = {
 	KPARSER_ARG_U(16, "pfoverlay_type_src_off",
 			tlv_node_conf.node_proto.ops.pfoverlay_type.src_off,
 			0, 0xffff, 0, "dummy_help"),
-	KPARSER_ARG_U(16, "pfoverlay_type_mask",
+	KPARSER_ARG_U_HEX(16, "pfoverlay_type_mask",
 			tlv_node_conf.node_proto.ops.pfoverlay_type.mask,
-			0, 0xffff, 0, "dummy_help"),
+			0, KPARSER_DEFAULT_U16_MASK, KPARSER_DEFAULT_U16_MASK,
+			"dummy_help"),
 	KPARSER_ARG_U(8, "pfoverlay_type_size",
 			tlv_node_conf.node_proto.ops.pfoverlay_type.size,
 			0, 0xff, 0,
@@ -1010,8 +1034,9 @@ static const struct kparser_arg_key_val_token flag_field_key_vals[] = {
 
 	KPARSER_ARG_U(32, "flag", flag_field_conf.conf.flag,
 			0, 0xffffffff, 0, "dummy_help"),
-	KPARSER_ARG_U(32, "mask", flag_field_conf.conf.mask,
-			0, 0xffffffff, 0, "dummy_help"),
+	KPARSER_ARG_U_HEX(32, "mask", flag_field_conf.conf.mask,
+			0, KPARSER_DEFAULT_U32_MASK, KPARSER_DEFAULT_U32_MASK,
+			"dummy_help"),
 	KPARSER_ARG_U(64, "size", flag_field_conf.conf.size, 0,
 			0xffffffff, 0, "dummy_help"),
 };
