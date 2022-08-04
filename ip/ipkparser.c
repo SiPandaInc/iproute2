@@ -18,8 +18,9 @@
 
 #include "utils.h"
 #include "ip_common.h"
+#include "kparser_common.h"
 
-static char *progname = NULL;
+static const char *progname = "tc";
 
 // WIP: TODO: use spaces while using arithmatic operators
 extern const struct kparser_global_namespaces *g_namespaces[];
@@ -44,8 +45,9 @@ enum {
 
 #define KPARSER_NLM_MAX_LEN 8192
 
-static void usage(FILE *stream, bool intro, int argc, int *argidx, char **argv,
-		bool dump_ops, bool dump_objects);
+typedef void usage_handler(FILE *stream, bool intro, int argc, int *argidx,
+		char **argv, bool dump_ops, bool dump_objects);
+static usage_handler *usage = NULL;
 
 static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 		const struct kparser_conf_cmd *cmd_arg)
@@ -1146,6 +1148,7 @@ errout:
 struct kparser_cli_ops {
 	int op;
 	const char *op_name;
+	const char *description;
 	bool hidden;
 };
 
@@ -1153,26 +1156,34 @@ static struct kparser_cli_ops cli_ops[] = {
 	{
 		.op_name = "create",
 		.op = op_create,
+		.description = "create an object",
 	},
 	{
 		.op_name = "read",
 		.op = op_read,
+		.description = "read an object",
 	},
 	{
 		.op_name = "update",
 		.op = op_update,
+		.description = "modify an object",
 	},
 	{
 		.op_name = "delete",
 		.op = op_delete,
+		.description = "delete an object",
 	},
 	{
 		.op_name = "lock",
 		.op = op_lock,
+		.description =
+			"lock a parser object so it cannot be deleted/modified",
 	},
 	{
 		.op_name = "unlock",
 		.op = op_unlock,
+		.description =
+			"unlock a parser object so it can be deleted/modified",
 	},
 };
 
@@ -1193,9 +1204,8 @@ static const char *arg_val_type_str[] =
 	[KPARSER_ARG_VAL_INVALID] = "end of valid values"
 };
 
-#if 0
-static void usage(FILE *stream, bool intro, int argc, int *argidx, char **argv,
-		bool dump_ops, bool dump_objects)
+static void usage_text(FILE *stream, bool intro, int argc, int *argidx,
+		char **argv, bool dump_ops, bool dump_objects)
 {
 	const struct kparser_arg_key_val_token *token;
 	const char *arg_name, *ns = NULL, *arg = NULL;
@@ -1215,8 +1225,10 @@ static void usage(FILE *stream, bool intro, int argc, int *argidx, char **argv,
 		"More help 2: \"%s parser help objects\"\n"
 		"More help 3: \"%s parser help objects <objname>\"\n"
 		"More help 4: \"%s parser help objects <objname> <keyname>\"\n"
-		"More help 5: \"%s parser help args\"\n",
-		progname, progname, progname, progname, progname, progname);
+		"More help 5: \"%s parser help args\"\n"
+		"NOTE: use `%s -j -p` flags in CLI for formatted JSON output\n",
+		progname, progname, progname, progname, progname,
+		progname, progname);
 
 	if (!argc || !argidx || !argv) {
 		// fprintf(stream, "type `help` for more details on usage\n");
@@ -1377,9 +1389,9 @@ print_args:
 		}
 	}
 }
-#else
-static void usage(FILE *stream, bool intro, int argc, int *argidx, char **argv,
-		bool dump_ops, bool dump_objects)
+
+static void usage_json(FILE *stream, bool intro, int argc, int *argidx,
+		char **argv, bool dump_ops, bool dump_objects)
 {
 	const struct kparser_arg_key_val_token *token;
 	const char *arg_name, *ns = NULL, *arg = NULL;
@@ -1413,15 +1425,20 @@ static void usage(FILE *stream, bool intro, int argc, int *argidx, char **argv,
 		if (argidx)
 			(*argidx)++;
 label_dump_ops:
-		fprintf(stream, "operations := {");
+		new_json_obj(json);
+		open_json_object(NULL);
+		open_json_object("operations");
 		for (i = 0; i < sizeof(cli_ops) / sizeof(cli_ops[0]); i++) {
 			if (cli_ops[i].hidden == true)
 				continue;
-			if (i == (sizeof(cli_ops) / sizeof(cli_ops[0]) - 1))
-				fprintf(stream, "%s}\n", cli_ops[i].op_name);
-			else
-				fprintf(stream, "%s | ", cli_ops[i].op_name);
+			open_json_object(cli_ops[i].op_name);
+			print_string(PRINT_ANY, "description",
+					"%s", cli_ops[i].description);
+			close_json_object();
 		}
+		close_json_object();
+		close_json_object();
+		delete_json_obj();
 		if (dump_ops)
 			return;
 	}
@@ -1441,13 +1458,20 @@ label_dump_ops:
 		ns = NULL;
 
 label_dump_objects:
-		fprintf(stream, "objects := {");
+		new_json_obj(json);
+		open_json_object(NULL);
+		open_json_object("objects");
 		for (i = 0; i < KPARSER_NS_MAX; i++) {
 			if (g_namespaces[i] == NULL)
 				continue;
-			fprintf(stream, "%s | ", g_namespaces[i]->name);
+			open_json_object(g_namespaces[i]->name);
+			print_string(PRINT_ANY, "description",
+					"%s", g_namespaces[i]->description);
+			close_json_object();
 		}
-		fprintf(stream, "}\n");
+		close_json_object();
+		close_json_object();
+		delete_json_obj();
 		if (dump_objects)
 			return;
 	}
@@ -1489,13 +1513,15 @@ print_args:
 				if (arg && matches(arg, arg_name))
 					continue;
 				open_json_object(arg_name);
+
 				print_string(PRINT_ANY, "type", "",
 						arg_val_type_str[token->type]);
 				print_uint(PRINT_ANY, "mandatory", "",
 						token->mandatory);
-				print_string(PRINT_ANY, "help_msg", "",
+				print_string(PRINT_ANY, "description", "",
 						token->help_msg);
-				open_json_array(PRINT_JSON, "incompatible_keys");
+				open_json_array(PRINT_JSON,
+						"incompatible_keys");
 				for (k = 0; k < sizeof(token->
 					incompatible_keys) / sizeof(token->
 						incompatible_keys[0]); k++) {
@@ -1565,20 +1591,18 @@ print_args:
 			if (arg && j == g_namespaces[i]->arg_tokens_count)
 				fprintf(stream,
 					"\n\t{`%s`:invalid arg name}", arg);
-			// fprintf(stream, "\n]\n");
 		}
 	}
 }
-
-#endif
 
 int do_kparser(int argc, char **argv)
 {
 	int argidx = 0;
 	int i;
 
-	// only safe when ip/tc increments argv before the handler call
-	progname = argv[-2];
+	usage = usage_text;
+	if (json)
+		usage = usage_json;
 
 	if (argc < 1) {
 		usage(stderr, true, 0, NULL, NULL, false, false);
