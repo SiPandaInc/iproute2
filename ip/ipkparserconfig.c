@@ -603,8 +603,7 @@ static const struct kparser_arg_key_val_token md_key_vals[] =
 			"length in bytes", NULL, NULL),
 	KPARSER_ARG_U(64, "addoff", md_conf.add_off,
 			KPARSER_METADATA_OFFSET_MIN,
-			KPARSER_METADATA_OFFSET_MAX,
-			KPARSER_METADATA_OFFSET_INVALID,
+			KPARSER_METADATA_OFFSET_MAX, 0,
 			"add any additional constant offset value if needed",
 			NULL, NULL, "soff"),
 };
@@ -660,15 +659,15 @@ static const struct kparser_arg_key_val_token mdl_key_vals[] =
 static const struct kparser_arg_set node_types[] =
 {
 	{
-		.set_value_str = "plain",
+		.set_value_str = "PLAIN",
 		.set_value_enum = KPARSER_NODE_TYPE_PLAIN,
 	},
 	{
-		.set_value_str = "tlvs",
+		.set_value_str = "TLV",
 		.set_value_enum = KPARSER_NODE_TYPE_TLVS,
 	},
 	{
-		.set_value_str = "flag_fields",
+		.set_value_str = "FLAGFIELDS",
 		.set_value_enum = KPARSER_NODE_TYPE_FLAG_FIELDS,
 	},
 };
@@ -788,7 +787,7 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] =
 			" the header length value", NULL, NULL),
 	KPARSER_ARG_U(8, "hdrlenmultiplier",
 			PLAIN_NODE.proto_node.ops.pflen.multiplier,
-			0, 0xff, 0, "constant multiplier to calculate final"
+			0, 0xff, 1, "constant multiplier to calculate final"
 			" header length in bytes", NULL, NULL),
 	KPARSER_ARG_U(8, "hdrlenaddvalue",
 			PLAIN_NODE.proto_node.ops.pflen.add_value,
@@ -806,7 +805,7 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] =
 			0, KPARSER_DEFAULT_U16_MASK, KPARSER_DEFAULT_U16_MASK,
 			"mask to extract the next protocol identifier",
 			NULL, NULL),
-	KPARSER_ARG_U(8, "nxtsize",
+	KPARSER_ARG_U(8, "nxtlength",
 			PLAIN_NODE.proto_node.ops.pfnext_proto.size,
 			0, 0xff, 0,
 			"size of the next protocol identifier field",
@@ -880,7 +879,7 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] =
 			" this tlv length field's value ", NULL, NULL),
 	KPARSER_ARG_U(8, "tlvslenmultiplier",
 			TLVS_NODE.proto_node.ops.pflen.multiplier,
-			0, 0xff, 0, "constant multiplier to calculate final"
+			0, 0xff, 1, "constant multiplier to calculate final"
 			" tlv length in bytes", NULL, NULL),
 	KPARSER_ARG_U(8, "tlvshdrlenaddvalue",
 			TLVS_NODE.proto_node.ops.pflen.add_value,
@@ -899,7 +898,7 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] =
 	KPARSER_ARG_U(8, "tlvstypelen",
 			TLVS_NODE.proto_node.ops.pftype.size, 0, 0xff, 0,
 			"size of the next tlv type field", NULL, NULL),
-	KPARSER_ARG_U(8, "tlvs_type_rightshift",
+	KPARSER_ARG_U(8, "tlvstyperightshift",
 			TLVS_NODE.proto_node.ops.pftype.right_shift, 0, 0xff, 0,
 			"number of bits to shift right to extract the next tlv"
 			" type field", NULL, "tlvs_type"),
@@ -941,9 +940,9 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] =
 			0, 0xffffffff, 0, "kParser error code to return on a"
 			"TLV table lookup miss and tlv_wildcard_node is NULL",
 			NULL, NULL),
-	KPARSER_ARG_HKEY("tlvprototable.name", "tlvprototable.id",
+	KPARSER_ARG_HKEY("tlvtable.name", "tlvtable.id",
 			TLVS_NODE.tlv_proto_table_key,
-			"Lookup table for TLV type", NULL, NULL),
+			"Lookup TLV table using TLV type", NULL, NULL),
 	KPARSER_ARG_HKEY("tlvwildcardnode.name", "tlvwildcardnode.id",
 			TLVS_NODE.tlv_wildcard_node_key, "Node to use on a TLV"
 			" type lookup miss", NULL, NULL),
@@ -1090,11 +1089,11 @@ static const struct kparser_arg_key_val_token tlv_parse_node_key_vals[] =
 		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->
 				tlv_node_conf.key.id),
 	},
-	KPARSER_ARG_U(64, "min_len", tlv_node_conf.node_proto.min_len,
-			0, 0xffffffffffffffff, 0,
+	KPARSER_ARG_U(64, "minlen", tlv_node_conf.node_proto.min_len,
+			0, 0xffffffff, 0,
 			"<TODO>", NULL, NULL),
-	KPARSER_ARG_U(64, "max_len", tlv_node_conf.node_proto.max_len, 0,
-			0xffffffffffffffff, 0, 
+	KPARSER_ARG_U(64, "maxlen", tlv_node_conf.node_proto.max_len, 0,
+			0xffffffff, 0xffffffff, 
 			"<TODO>", NULL, NULL),
 	KPARSER_ARG_BOOL("is_padding", tlv_node_conf.node_proto.is_padding, 
 			false,
@@ -1133,7 +1132,7 @@ static const struct kparser_arg_key_val_token tlv_parse_node_key_vals[] =
 			"overlay_wildcard_parse_node.id",
 			tlv_node_conf.overlay_wildcard_parse_node_key,
 			"<TODO>", NULL, NULL),
-	KPARSER_ARG_HKEY("metadata_table.name", "metadata_table.id",
+	KPARSER_ARG_HKEY("metadatatable.name", "metadatatable.id",
 			tlv_node_conf.metadata_table_key,
 			"<TODO>", NULL, NULL),
 };
@@ -1155,7 +1154,7 @@ static const struct kparser_arg_key_val_token tlv_proto_table_key_vals[] =
 				table_conf.key.id),
 	},
 	KPARSER_ARG_H_K_IDX("idx", table_conf.idx, 0, -1, -1, "<TODO>"),
-	KPARSER_ARG_U(32, "type", table_conf.optional_value1,
+	KPARSER_ARG_U(32, "tlvtype", table_conf.optional_value1,
 			0, 0xffffffff, 0, 
 			"<TODO>", NULL, NULL),
 	KPARSER_ARG_H_K_N("table.name", table_conf.key.name,
@@ -1163,8 +1162,7 @@ static const struct kparser_arg_key_val_token tlv_proto_table_key_vals[] =
 	KPARSER_ARG_H_K_I("table.id", table_conf.key.id,
 			KPARSER_USER_ID_MIN, KPARSER_USER_ID_MAX,
 			KPARSER_INVALID_ID, "<TODO>"),
-	KPARSER_ARG_HKEY("tlv_parse_node.name",
-			"tlv_parse_node.id", table_conf.elem_key,
+	KPARSER_ARG_HKEY("tlvnode.name", "tlvnode.id", table_conf.elem_key,
 			"<TODO>", NULL, NULL),
 };
 
@@ -1310,34 +1308,34 @@ static const struct kparser_arg_key_val_token parser_key_vals[] =
 	KPARSER_ARG_U(16, "flags", parser_conf.config.flags, 0, 0xffff,
 			0, 
 			"<TODO>", NULL, NULL),
-	KPARSER_ARG_U(16, "max_nodes", parser_conf.config.max_nodes,
+	KPARSER_ARG_U(16, "maxnodes", parser_conf.config.max_nodes,
 			0, 0xffff, KPARSER_MAX_NODES, 
 			"<TODO>", NULL, NULL),
-	KPARSER_ARG_U(16, "max_encaps", parser_conf.config.max_encaps,
+	KPARSER_ARG_U(16, "maxencaps", parser_conf.config.max_encaps,
 			0, 0xffff, KPARSER_MAX_ENCAPS, 
 			"<TODO>", NULL, NULL),
-	KPARSER_ARG_U(16, "max_frames", parser_conf.config.max_frames,
+	KPARSER_ARG_U(16, "maxframes", parser_conf.config.max_frames,
 			0, 0xffff, KPARSER_MAX_FRAMES, 
 			"<TODO>", NULL, NULL),
-	KPARSER_ARG_U(64, "metameta_size", parser_conf.config.metameta_size, 0,
+	KPARSER_ARG_U(64, "metametasize", parser_conf.config.metameta_size, 0,
 			0xffffffff, 0, 
 			"<TODO>", NULL, NULL),
-	KPARSER_ARG_U(64, "frame_size", parser_conf.config.frame_size, 0,
+	KPARSER_ARG_U(64, "framesize", parser_conf.config.frame_size, 0,
 			0xffffffff, 0, 
 			"<TODO>", NULL, NULL),
-	KPARSER_ARG_HKEY("root_node.name", "root_node.id",
+	KPARSER_ARG_HKEY("rootnode.name", "rootnode.id",
 			parser_conf.root_node_key,
 			"<TODO>", NULL, NULL),
-	KPARSER_ARG_HKEY("ok_node.name", "ok_node.id",
+	KPARSER_ARG_HKEY("oknode.name", "oknode.id",
 			parser_conf.ok_node_key,
 			"<TODO>", NULL, NULL),
-	KPARSER_ARG_HKEY("fail_node.name", "fail_node.id",
+	KPARSER_ARG_HKEY("failnode.name", "failnode.id",
 			parser_conf.fail_node_key,
 			"<TODO>", NULL, NULL),
-	KPARSER_ARG_HKEY("atencap_node.name", "atencap_node.id",
+	KPARSER_ARG_HKEY("atencapnode.name", "atencapnode.id",
 			parser_conf.atencap_node_key,
 			"<TODO>", NULL, NULL),
-	KPARSER_ARG_HKEY("cntrs_table.name", "cntrs_table.id",
+	KPARSER_ARG_HKEY("cntrstable.name", "cntrstable.id",
 			parser_conf.cntrs_table_key,
 			"<TODO>", NULL, NULL),
 };
@@ -1390,7 +1388,7 @@ static const struct kparser_global_namespaces
 kparser_arg_namespace_cond_exprs_table =
 {
 	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_CONDEXPRS_TABLE,
-			"cond_exprs_table",
+			"cond_exprs_list",
 			cond_exprs_table_key_vals,
 			"conditional expressions table object"),
 };
@@ -1399,7 +1397,7 @@ static const struct kparser_global_namespaces
 kparser_arg_namespace_cond_exprs_tables =
 {
 	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_CONDEXPRS_TABLES,
-			"cond_exprs_tables",
+			"cond_exprs_table",
 			cond_exprs_tables_key_vals,
 			"table of conditional expressions table object"),
 };
@@ -1417,7 +1415,7 @@ static const struct kparser_global_namespaces
 kparser_arg_namespace_counter_table =
 {
 	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_COUNTER_TABLE,
-			"counter_table",
+			"countertable",
 			counter_table_key_vals,
 			"table of counter object"),
 };
@@ -1438,7 +1436,7 @@ static const struct kparser_global_namespaces kparser_arg_namespace_metalist =
 static const struct kparser_global_namespaces
 kparser_arg_namespace_parse_node =
 {
-	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_NODE_PARSE, "parse_node",
+	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_NODE_PARSE, "node",
 			parse_node_key_vals,
 			"plain parse node object"),
 };
@@ -1446,7 +1444,7 @@ kparser_arg_namespace_parse_node =
 static const struct kparser_global_namespaces
 kparser_arg_namespace_proto_table =
 {
-	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_PROTO_TABLE, "proto_table",
+	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_PROTO_TABLE, "table",
 			proto_table_key_vals,
 			"table of parse node objects"),
 };
@@ -1454,7 +1452,7 @@ kparser_arg_namespace_proto_table =
 static const struct kparser_global_namespaces
 kparser_arg_namespace_tlv_parse_node =
 {
-	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_TLV_NODE_PARSE, "tlv_parse_node",
+	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_TLV_NODE_PARSE, "tlvnode",
 			tlv_parse_node_key_vals,
 			"tlv (type-length-value) parse node objects"),
 };
@@ -1462,7 +1460,7 @@ kparser_arg_namespace_tlv_parse_node =
 static const struct kparser_global_namespaces
 kparser_arg_namespace_tlv_proto_table =
 {
-	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_TLV_PROTO_TABLE, "tlv_proto_table",
+	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_TLV_PROTO_TABLE, "tlvtable",
 			tlv_proto_table_key_vals,
 			"table of tlv parse node objects"),
 };
