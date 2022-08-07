@@ -20,6 +20,14 @@
 #include "ip_common.h"
 #include "kparser_common.h"
 
+static inline bool keymatches(const char *prefix, const char *string)
+{
+	if (!*prefix)
+		return true;
+
+	return strcmp(prefix, string);
+}
+
 static const char *progname = "tc";
 
 // WIP: TODO: use spaces while using arithmatic operators
@@ -283,7 +291,7 @@ static inline bool parse_cmd_line_key_val_str(int argc, int *argidx,
 		}
 	}
 
-	if (matches(argv[*argidx], key)) {
+	if (keymatches(argv[*argidx], key)) {
 		// start scanning from beginning
 		if (restart)
 			*argidx = 0;
@@ -295,7 +303,7 @@ static inline bool parse_cmd_line_key_val_str(int argc, int *argidx,
 						key);
 				return false;
 			}
-			if (matches(argv[*argidx], key) == 0)
+			if (keymatches(argv[*argidx], key) == 0)
 				break;
 			(*argidx)++;
 		}
@@ -373,6 +381,10 @@ static inline bool parse_cmd_line_key_val_ints(int argc, int *argidx,
 	}
 
 	memcpy(value, &ret_digit, value_len);
+	if (strcmp(key, "flag") == 0) {
+		printf("PK:%llu, %u %s\n", ret_digit, *(__u32 *) value, arg_val);
+	}
+
 
 	return true;
 }
@@ -589,7 +601,7 @@ do {									\
 			break;						\
 		for (j = 0; j < argc; j += 2) {				\
 			if (argv[j] &&					\
-				(matches(incompatible_keys[i],		\
+				(keymatches(incompatible_keys[i],		\
 					 argv[j]) == 0)) {		\
 				err_key_str = argv[j];			\
 				break;					\
@@ -847,7 +859,7 @@ static int __do_cli(const struct kparser_global_namespaces *namespace,
 				goto out;
 			}
 			for (j = 0; j < curr_arg->value_set_len; j++) {
-				if (matches(types_buf, 
+				if (keymatches(types_buf, 
 					curr_arg->value_set[j].set_value_str)
 						== 0) {
 					memcpy(((void *) cmd_arg) + w_offset,
@@ -1043,7 +1055,7 @@ array_parse_start:
 				curr_arg = curr_arg->default_template_token;
 			if (!key)
 				key = curr_arg->key_name;
-			if (argv[i] && (matches(argv[i], key) == 0))
+			if (argv[i] && (keymatches(argv[i], key) == 0))
 				break;
 		}
 		if (j == namespace->arg_tokens_count) {
@@ -1131,7 +1143,7 @@ static int do_cli(int op, int argc, int *argidx,
 		if (!g_namespaces[i])
 			continue;
 
-		if (matches(ns, g_namespaces[i]->name) == 0) {
+		if (keymatches(ns, g_namespaces[i]->name) == 0) {
 			(*argidx)++;
 			return __do_cli(g_namespaces[i],
 					op, argc, argidx, argv,
@@ -1236,7 +1248,7 @@ static void usage_text(FILE *stream, bool intro, int argc, int *argidx,
 	}
 
 	if ((argc && argidx && (*argidx <= (argc - 1)) && argv &&
-		argv[*argidx] && (matches(argv[*argidx], "operations") ==
+		argv[*argidx] && (keymatches(argv[*argidx], "operations") ==
 			0)) || argc == 0) {
 		if (argidx)
 			(*argidx)++;
@@ -1255,7 +1267,7 @@ label_dump_ops:
 	}
 
 	if ((argc && argidx && (*argidx <= (argc - 1)) && argv &&
-		argv[*argidx] && (matches(argv[*argidx], "objects") == 0)) ||
+		argv[*argidx] && (keymatches(argv[*argidx], "objects") == 0)) ||
 			argc == 0) {
 
 		if (argidx)
@@ -1281,7 +1293,7 @@ label_dump_objects:
 	}
 
 	if ((argc && argidx && (*argidx <= (argc - 1)) && argv &&
-		argv[*argidx] && (matches(argv[*argidx], "args") == 0)) ||
+		argv[*argidx] && (keymatches(argv[*argidx], "args") == 0)) ||
 			argc == 0) {
 		if (argidx)
 			(*argidx)++;
@@ -1290,7 +1302,7 @@ label_dump_objects:
 print_args:
 		if (*argidx <= (argc - 1) && argv[*argidx]) {
 			arg = argv[*argidx];
-			if (matches(arg, "arg") == 0) {
+			if (keymatches(arg, "arg") == 0) {
 				(*argidx)++;
 				if (*argidx <= (argc - 1) && argv[*argidx])
 					arg = argv[*argidx];
@@ -1312,7 +1324,7 @@ print_args:
 					token = token->default_template_token;
 				if (!arg_name)
 					arg_name = token->key_name;
-				if (arg && matches(arg, arg_name))
+				if (arg && keymatches(arg, arg_name))
 					continue;
 				fprintf(stream, "\n\t{");
 				fprintf(stream,
@@ -1420,7 +1432,7 @@ static void usage_json(FILE *stream, bool intro, int argc, int *argidx,
 	}
 
 	if ((argc && argidx && (*argidx <= (argc - 1)) && argv &&
-		argv[*argidx] && (matches(argv[*argidx], "operations") ==
+		argv[*argidx] && (keymatches(argv[*argidx], "operations") ==
 			0)) || argc == 0) {
 		if (argidx)
 			(*argidx)++;
@@ -1444,7 +1456,7 @@ label_dump_ops:
 	}
 
 	if ((argc && argidx && (*argidx <= (argc - 1)) && argv &&
-		argv[*argidx] && (matches(argv[*argidx], "objects") == 0)) ||
+		argv[*argidx] && (keymatches(argv[*argidx], "objects") == 0)) ||
 			argc == 0) {
 
 		if (argidx)
@@ -1477,7 +1489,7 @@ label_dump_objects:
 	}
 
 	if ((argc && argidx && (*argidx <= (argc - 1)) && argv &&
-		argv[*argidx] && (matches(argv[*argidx], "args") == 0)) ||
+		argv[*argidx] && (keymatches(argv[*argidx], "args") == 0)) ||
 			argc == 0) {
 		if (argidx)
 			(*argidx)++;
@@ -1486,7 +1498,7 @@ label_dump_objects:
 print_args:
 		if (*argidx <= (argc - 1) && argv[*argidx]) {
 			arg = argv[*argidx];
-			if (matches(arg, "arg") == 0) {
+			if (keymatches(arg, "arg") == 0) {
 				(*argidx)++;
 				if (*argidx <= (argc - 1) && argv[*argidx])
 					arg = argv[*argidx];
@@ -1510,7 +1522,7 @@ print_args:
 					token = token->default_template_token;
 				if (!arg_name)
 					arg_name = token->key_name;
-				if (arg && matches(arg, arg_name))
+				if (arg && keymatches(arg, arg_name))
 					continue;
 				open_json_object(arg_name);
 
@@ -1609,7 +1621,7 @@ int do_kparser(int argc, char **argv)
 		return EINVAL;
 	}
 
-	if (matches(*argv, "help") == 0) {
+	if (keymatches(*argv, "help") == 0) {
 		argidx++;
 		usage(stdout, true, argc, &argidx, argv, false, false);
 		return 0;
@@ -1622,7 +1634,7 @@ int do_kparser(int argc, char **argv)
 
 	for (i = 0; i < sizeof(cli_ops) / sizeof(cli_ops[0]); i++) {
 		if (argc && (argidx <= (argc - 1)) && argv && argv[argidx] &&
-			(matches(argv[argidx], cli_ops[i].op_name) == 0)) {
+			(keymatches(argv[argidx], cli_ops[i].op_name) == 0)) {
 			argidx++;
 			return do_cli(cli_ops[i].op, argc, &argidx,
 				      (const char **) argv);

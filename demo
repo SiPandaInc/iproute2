@@ -1,0 +1,462 @@
+#!/bin/bash
+die()
+{
+	echo "error:$1"
+	exit -1
+}
+
+#<< //// ... //// denotes usage/man comments.
+
+<< ////
+NOTE:
+creates an empty protocol table object whose id is 2 and name is table.ip
+////
+./ip/ip -j -p parser create table name table.ip id 2			\
+		|| die "error"
+echo "----------------------------------------------------------------------"
+<< ////
+NOTE:
+creates an empty protocol table object whose id is 1 and name is table.ether
+////
+./ip/ip -j -p parser create table name table.ether id 1			\
+		|| die "error"
+echo "----------------------------------------------------------------------"
+<< ////
+NOTE:
+creates a metadata object identified by name "md.fragment_bit_offset"
+type bit_offset specifies the operation type of this metadata is to extract
+offset of bit field from packet.
+doff 0 means the generated data will be written at destiantion offset 0.
+isframe true means the data will be written to user's metadata buffer, if
+metadata and metametabuffer are separate.
+addoff 53 tells to add 53 bits with the extracted header length to calculate
+the final position of the desired bit field's offset.
+Note that for offset, the write length is always 2 bytes.
+////
+./ip/ip -j -p parser create metadata name md.fragment_bit_offset	\
+		type bit_offset						\
+		doff 0							\
+		addoff 53						\
+		isframe true						\
+		|| die "error"
+echo "----------------------------------------------------------------------"
+./ip/ip -j -p parser create metadata name md.src_address_offset		\
+		type offset						\
+		addoff 12						\
+		doff 2							\
+		isframe true						\
+		|| die "error"
+echo "----------------------------------------------------------------------"
+./ip/ip -j -p parser create metadata name md.dst_address_offset		\
+		type offset						\
+		addoff 16						\
+		doff 4							\
+		isframe true						\
+		|| die "error"
+echo "----------------------------------------------------------------------"
+./ip/ip -j -p parser create metadata name md.tcp.src_port		\
+		type offset						\
+		addoff 0						\
+		doff 6							\
+		isframe true						\
+		|| die "error"
+echo "----------------------------------------------------------------------"
+./ip/ip -j -p parser create metadata name md.tcp.dst_port		\
+		type offset						\
+		addoff 2						\
+		doff 8							\
+		isframe true						\
+		|| die "error"
+echo "----------------------------------------------------------------------"
+<< ////
+NOTE:
+creates a metalist object identified by name "mdl.tcp"
+associated metadata objects are specified using fields metadata.name <name>
+Note: metadata.id can also be used here instead, but not both.
+////
+./ip/ip -j -p parser create metalist name mdl.tcp			\
+		metadata.name md.tcp.src_port				\
+		metadata.name md.tcp.dst_port				\
+		|| die "error"
+echo "----------------------------------------------------------------------"
+./ip/ip -j -p parser create metalist name mdl.ipv4			\
+		metadata.name md.dst_address_offset			\
+		metadata.name md.src_address_offset 			\
+		metadata.name md.fragment_bit_offset			\
+		|| die "error"
+echo "----------------------------------------------------------------------"
+<< ////
+NOTE:
+creates a parse_node object identified by name "node.ether"
+This represents ethernet header parsing rules.
+minlen 14 tells minimum value of the ethernet header is 14 bytes.
+nxtoffset 12 and nxtlength 2 tells starting from eather header
+(i.e. relative), after 12 bytes the next protocol number can be found whose
+length is 2 bytes.
+proto_table.name states the associated protocol table (i.e. table.ether)
+Value extracted using nxtoffset and nxtlength along with protocol
+table's entries will be used next for the lookup of the next protocol.
+////
+./ip/ip -j -p parser create node name node.ether			\
+		prototable.name table.ether				\
+		minlen 14						\
+		nxtoffset 12						\
+		nxtlength 2						\
+		|| die "error"
+echo "----------------------------------------------------------------------"
+<< ////
+NOTE:
+creates a parse_node object identified by name "node.ipv4"
+In this case this represents IPv4 header parsing rules.
+minlen 20 tells minimum value of the IPv4 header is 20 bytes.
+hdrlenoff 0 and hdrlenlen 1 tells look at relative offset of IPv4 headers
+offset 0 and length 1 byte for the header length.
+hdrlenmask 0x0f to extract the header length from masked field.
+hdrlenmultiplier 4 to multiply the extracted value by 4 to calculate the final
+header length. Default value of hdrlenmultiplier is 1.
+proto_table.name states the associated protocol table (i.e. table.ip)
+Value extracted using nxtoffset and nxtlength along with protocol
+table's entries will be used next for the lookup of the next protocol.
+////
+./ip/ip -j -p parser create metadata name md.gre.seqno_offset		\
+		type offset						\
+		doff 22							\
+		isframe true						\
+		|| die "error"
+./ip/ip -j -p parser create metadata name md.gre.seqno			\
+		type hdrdata						\
+		soff 0							\
+		doff 24							\
+		length 4						\
+		isframe true						\
+		isendianneeded true					\
+		|| die "error"
+./ip/ip -j -p parser create metalist name ml.gre.seqno			\
+		metadata.name md.gre.seqno_offset			\
+		metadata.name md.gre.seqno				\
+		|| die "error"
+
+./ip/ip -j -p parser create flags name flag.gre.seqno			\
+		flag 0x1000						\
+		size 4							\
+		networkendian true					\
+		|| die "error"
+./ip/ip -j -p parser create flags name flag.gre.csum			\
+		flag 0x8000						\
+		size 4							\
+		networkendian true					\
+		|| die "error"
+./ip/ip -j -p parser create flags name flag.gre.key			\
+		flag 0x2000						\
+		size 4							\
+		networkendian true					\
+		|| die "error"
+./ip/ip -j -p parser create flags name flag.gre.ack			\
+		flag 0x0080						\
+		size 4							\
+		networkendian true					\
+		|| die "error"
+./ip/ip -j -p parser create flagfields name flagslist.gre id 1		\
+		|| die "error"
+# following ordering and indexes are important, must be according to the flags
+./ip/ip -j -p parser create flagfields/flagslist.gre:1/0		\
+		flag.name flag.gre.csum					\
+		|| die "error"
+./ip/ip -j -p parser create flagfields/flagslist.gre:1/1		\
+		flag.name flag.gre.key					\
+		|| die "error"
+./ip/ip -j -p parser create flagfields/flagslist.gre:1/2		\
+		flag.name flag.gre.seqno				\
+		|| die "error"
+./ip/ip -j -p parser create flagfields/flagslist.gre:1/3		\
+		flag.name flag.gre.ack					\
+		|| die "error"
+
+./ip/ip -j -p parser create flagsnode name flagsnode.gre		\
+		metadatatable.name ml.gre.seqno				\
+		|| die "error"
+./ip/ip -j -p parser create flagstable name flagstable.gre id 1		\
+		|| die "error"
+./ip/ip -j -p parser create flagstable/flagstable.gre:1/0		\
+		flagindex 2						\
+		flagsnode.name flagsnode.gre				\
+		|| die "error"
+./ip/ip -j -p parser create metadata name md.gre.flags			\
+		type hdrdata						\
+		soff 0							\
+		doff 20							\
+		length 2						\
+		isframe true						\
+		isendianneeded true					\
+		|| die "error"
+./ip/ip -j -p parser create metalist name mdl.gre			\
+		metadata.name md.gre.flags				\
+		|| die "error"
+./ip/ip -j -p parser create node name node.gre				\
+		type FLAGFIELDS						\
+		metadatatable.name mdl.gre				\
+		encap true						\
+		minlen 4 						\
+		flagsoff 0						\
+		flagslen 2						\
+		flagfieldhdrlen 4					\
+		flagfieldstable.name flagslist.gre			\
+		flagfieldsprototable.name flagstable.gre		\
+		|| die "error"
+./ip/ip -j -p parser create node name node.ipv4				\
+		metadatatable.name mdl.ipv4				\
+		minlen 20 						\
+		hdrlenoff 0						\
+		hdrlenlen 1						\
+		hdrlenmask 0x0f						\
+		hdrlenmultiplier 4					\
+		nxtoffset 9						\
+		nxtlength 1						\
+		prototable.name table.ip				\
+		|| die "error"
+./ip/ip -j -p parser create node name node.ipv6				\
+		minlen 40 						\
+		nxtoffset 6						\
+		nxtlength 1						\
+		prototable.name table.ip				\
+		|| die "error"
+./ip/ip -j -p parser create node name node.vlan				\
+		minlen 4 						\
+		nxtoffset 2						\
+		nxtlength 2						\
+		prototable.name table.ether				\
+		|| die "error"
+echo "----------------------------------------------------------------------"
+<< ////
+NOTE:
+creates a parse_node object identified by name "node.tcp"
+In this case this represents generic TCP header parsing rules along with TLV
+parsing for TCP options fields.
+Comparing to the previous node.ipv4, additional fields are explained here.
+type tlvs specify this is a TLV (type-length-value) node. The default value
+is "plain", above "node.ipv4" is a "plain" parse node.
+Note TCP options are variable length composite fields which are represented
+using an array of form "type-length-value" format.
+
+tlvstartoff 20, the relative start offset of the TLV fields in TCP header,
+which is 20 bytes from the start of the TCP header in this case for the very
+first TCP TLV.
+
+tlvtypeoff 0, denotes the relative offset in a TLV field. Since the very first
+value is the TLV type, it is 0.
+
+tlvtypelen 1, the size of the TLV's type field.
+
+tlvlenoff 1, relative offset where len field starts. This is 1 in this case,
+i.e. tlvtypeoff + tlvtypelen
+
+tlvlenlen 1, length field's length is 1 byte.
+
+tlvdataoff 2, the TLV's data starts at offset 2 (i.e. after type and len),
+and tlv data len can be calculated using tlv len. Rest of the fields such as
+hdrlenmultiplier are not mentioned because they are default values.
+
+tlvpad1enable  true  and tlveolenable true specifies pading and eol fields
+are enabled and respective values are tlvpad1 and tlveol.
+
+tlv_proto_table.id specifies the pre-existing tlv proto table id. This is the
+TCP options table in this case (i.e. MSS, SACK, TS etc.). The keys are tlvtypes. 
+////
+./ip/ip -j -p parser create metadata name md.tcp.tlv.sack.leftedge	\
+		type offset						\
+		addoff 2						\
+		doff 16							\
+		isframe true						\
+		|| die "error"
+./ip/ip -j -p parser create metadata name md.tcp.tlv.sack.rightedge	\
+		type offset						\
+		addoff 6						\
+		doff 18							\
+		isframe true						\
+		|| die "error"
+./ip/ip -j -p parser create metadata name md.tcp.tlv.mss		\
+		type offset						\
+		addoff 2						\
+		doff 10							\
+		isframe true						\
+		|| die "error"
+./ip/ip -j -p parser create metadata name md.tcp.tlv.ts			\
+		type hdrdata						\
+		soff 2							\
+		doff 12							\
+		length 4						\
+		isframe true						\
+		|| die "error"
+./ip/ip -j -p parser create metalist name ml.tcp.tlv.sack.10		\
+		metadata.name md.tcp.tlv.sack.leftedge			\
+		metadata.name md.tcp.tlv.sack.rightedge			\
+		|| die "error"
+./ip/ip -j -p parser create metalist name ml.tcp.tlv.mss		\
+		metadata.name md.tcp.tlv.mss				\
+		|| die "error"
+./ip/ip -j -p parser create metalist name ml.tcp.tlv.ts			\
+		metadata.name md.tcp.tlv.ts				\
+		|| die "error"
+./ip/ip -j -p parser create tlvnode name node.tlv.tcp.sack10		\
+		minlen 10						\
+		metadatatable.name ml.tcp.tlv.sack.10			\
+		|| die "error"
+./ip/ip -j -p parser create tlvtable name table.tlv.tcp.sack id 2	\
+		|| die "error"
+./ip/ip -j -p parser create tlvtable/table.tlv.tcp.sack:2/0		\
+		tlvtype 10						\
+		tlvnode.name node.tlv.tcp.sack10			\
+		|| die "error"
+./ip/ip -j -p parser create tlvnode name node.tlv.tcp.sack		\
+		minlen 2						\
+		pfoverlay_type_src_off 1				\
+		pfoverlay_type_size 1					\
+		overlay_proto_tlvs_table_key.name table.tlv.tcp.sack	\
+		|| die "error"
+./ip/ip -j -p parser create tlvnode name node.tlv.tcp.mss		\
+		minlen 4						\
+		metadatatable.name ml.tcp.tlv.mss			\
+		|| die "error"
+./ip/ip -j -p parser create tlvnode name node.tlv.tcp.ts		\
+		minlen 10						\
+		metadatatable.name ml.tcp.tlv.ts			\
+		|| die "error"
+./ip/ip -j -p parser create tlvtable name table.tlv.tcp id 1		\
+		|| die "error"
+./ip/ip -j -p parser create tlvtable/table.tlv.tcp:1/0			\
+		tlvtype 8						\
+		tlvnode.name node.tlv.tcp.ts				\
+		|| die "error"
+./ip/ip -j -p parser create tlvtable/table.tlv.tcp:1/1			\
+		tlvtype 2						\
+		tlvnode.name node.tlv.tcp.mss				\
+		|| die "error"
+./ip/ip -j -p parser create tlvtable/table.tlv.tcp:1/2			\
+		tlvtype 5						\
+		tlvnode.name node.tlv.tcp.sack				\
+		|| die "error"
+./ip/ip -j -p parser create node name node.tcp				\
+		type TLV						\
+		metadatatable.name mdl.tcp				\
+		minlen 20						\
+		hdrlenoff 12						\
+		hdrlenlen 1						\
+		hdrlenmask 0xf0						\
+		hdrlenmultiplier 4					\
+		hdrlenrightshift 4					\
+		tlvsfixedstartoffset true				\
+		tlvsstartoff 20						\
+		tlvspad1enable true					\
+		tlvspad1val 1						\
+		tlvseolenable true					\
+		tlvsminlen 2						\
+		tlvstypelen 1						\
+		tlvslenoff 1						\
+		tlvslenlen 1						\
+		tlvslenmask 0xff					\
+		tlvtable.name table.tlv.tcp				\
+		|| die "error"
+echo "----------------------------------------------------------------------"
+<< ////
+NOTE:
+creates an entry to the previously created empty protocol table object whose id
+is 1 and name is table.ether (ref. <table.ether:1>)
+The index of this table's entry is 0 (ref. <table.ether:1/0>)
+Table's entry points to the previously created parse node identified by
+name "node.name node.ipv4". value 0x800 specifies the ether's protocol value
+for IPv4.
+////
+./ip/ip -j -p parser create table/table.ether:1/0			\
+		value 0x800						\
+		node.name node.ipv4					\
+		|| die "error"
+
+./ip/ip -j -p parser create table/table.ether:1/0			\
+		value 0x8100						\
+		node.name node.vlan					\
+		|| die "error"
+
+./ip/ip -j -p parser create table/table.ether:1/1			\
+		value 0x86dd						\
+		node.name node.ipv6					\
+		|| die "error"
+
+echo "----------------------------------------------------------------------"
+<< ////
+NOTE:
+creates an entry to the previously created empty protocol table object whose id
+is 1 and name is table.ip (ref. <table.ip:2>)
+The index of this table's entry is 0 (ref. <table.ip:2/0>)
+Table's entry points to the previously created parse node identified by
+name "node.name node.tcp". value 0x6 specifies the IPv4's protocol value
+for TCP.
+////
+./ip/ip -j -p parser create table/table.ip:2/0				\
+		value 0x6						\
+		node.name node.tcp					\
+		|| die "error"
+./ip/ip -j -p parser create table/table.ip:2/1				\
+		value 4							\
+		node.name node.ipv4					\
+		|| die "error"
+./ip/ip -j -p parser create table/table.ip:2/2				\
+		value 47						\
+		node.name node.gre					\
+		|| die "error"
+
+echo "----------------------------------------------------------------------"
+
+./ip/ip -j -p parser create metadata name md.num_nodes			\
+		type numnodes						\
+		doff 0							\
+		|| die "error"
+./ip/ip -j -p parser create metadata name md.num_encaps			\
+		type numencaps						\
+		doff 4							\
+		|| die "error"
+./ip/ip -j -p parser create metadata name md.return_code		\
+		type return_code					\
+		doff 8							\
+		|| die "error"
+./ip/ip -j -p parser create metalist name mdl.final_status		\
+		metadata.name md.num_nodes				\
+		metadata.name md.num_encaps				\
+		metadata.name md.return_code				\
+		|| die "error"
+./ip/ip -j -p parser create node name node.parser_exit_ok		\
+		metadatatable.name mdl.final_status			\
+		|| die "error"
+./ip/ip -j -p parser create node name node.parser_exit_fail		\
+		metadatatable.name mdl.final_status			\
+		|| die "error"
+<< ////
+creates a parser object identified by name "test_parser"
+max_nodes specifies the maximum protocol parse node supported in the complete
+parse tree.
+max_encaps specifies the maximum encapsulations to be parsed. This should
+match with the user passed metadata buffer and must have enough space.
+max_frames specifies the maximum metadata frames user passed. This should 
+match with the user passed metadata buffer and must have enough space.
+metameta_size specifies the metametadata buffer size that user passed.
+This should match with the user passed buffer and must have enough space.
+frame_size specifies the metadata buffer size that user passed. This must
+match with the user passed buffer and must have enough space.
+root_node.name specifies the name of the protocol root node of this parser.
+////
+./ip/ip -j -p parser create parser name test_parser			\
+		maxnodes 12						\
+		maxencaps 3						\
+		maxframes 3						\
+		metametasize 20						\
+		framesize 28						\
+		rootnode.name node.ether				\
+		oknode.name node.parser_exit_ok				\
+		failnode.name node.parser_exit_fail			\
+		|| die "error"
+echo "----------------------------------------------------------------------"
+<< ////
+reads a parser object identified by name "test_parser". id can also be
+used here.
+deep_dump true is optional, it causes to dump whole parse tree.
+////
+./ip/ip -j -p parser read parser name test_parser || die "error"
