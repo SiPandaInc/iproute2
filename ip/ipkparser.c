@@ -9,7 +9,9 @@
  * Authors:	Pratyush Khan <pratyush@sipanda.io>
  */
 
+
 #include <arpa/inet.h>
+#include <ctype.h>
 #include <errno.h>
 #include <linux/genetlink.h>
 #include <stdbool.h>
@@ -100,7 +102,6 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 				(char *)(((void *) cmd_arg) + w_offset));
 			break;
 		case KPARSER_ARG_VAL_HYB_KEY_ID:
-		case KPARSER_ARG_VAL_HYB_IDX:
 			print_hex(PRINT_ANY, key, "", 
 				*(__u16 *)(((void *) cmd_arg) + w_offset));
 			break;
@@ -392,20 +393,25 @@ static inline bool parse_cmd_line_key_val_ints(int argc, int *argidx,
 static inline bool parse_element(const char *argv,
 		char *ns, size_t ns_size,
 		char *table_name, size_t table_name_size,
-		__u16 *table_id, int *idx)
+		__u16 *table_id)
 {
 	char arg_u16[KPARSER_MAX_STR_LEN_U16];
 	const char *tk, *tk1;
-	uint64_t ret_digit;
-	int32_t errno_local;
+	unsigned long ret_digit;
+	int errno_local;
+	bool isid = true;
 
 	if (!argv || !strlen(argv)) {
 		return false;
 	}
 
-	// parsing pattern: "ns/ether:0x402/1"
+	// parsing pattern1: "<namespace>/<name>
+	// parsing pattern2: "<namespace>/<object>"
+	tk = strchr(argv, '/');
+	tk1 = tk + 1;
+	tk--;
+	
 	if (ns && ns_size) {
-		tk = strchr(argv, '/');
 		if ((tk - argv + 1) > ns_size) {
 			fprintf(stderr, "%s:ns_size %lu less than"
 					" real size %lu\n",
@@ -414,71 +420,52 @@ static inline bool parse_element(const char *argv,
 			return false;
 		}
 		memcpy(ns, argv, (tk - argv + 1));
-		ns[tk - argv] = '\0';
+		ns[(tk - argv) + 1] = '\0';
 	}
 
-	if (!table_name || !table_name_size || !table_id || !idx) {
+	if (!table_name || !table_name_size || !table_id) {
 		return true;
 	}
 
-	tk = strchr(argv, '/');
-	tk++;
-	tk1 = strchr(tk, ':');
 	if (tk1 == NULL) {
-		fprintf(stderr, "%s:Create table entry command's format is "
-				"\"table/<table_name>:<table_id>/<table_idx>\"."
-				"Here ':' is missing around \"%s\".\n",
-				__FUNCTION__, tk);
+		fprintf(stderr, "Invalid hybrid key format:`%s`,"
+				"expected:`object/<name>` or `object/<id>`\n",
+				argv);
 		return false;
 	}
-	tk1--;
-	if ((tk1 - tk) + 1 > table_name_size) {
-		fprintf(stderr, "%s:Create table entry command's table"
+
+	/* There is no separator, check if this id (i.e. pure number) or name */
+	tk = tk1;
+	while (!tk || *tk != '\0')
+		if (!isdigit(*tk)) {
+			isid = false;
+			break;
+		}
+
+	if (!isid) {
+		// tk1 is object name
+		if (strlen(tk1) + 1 > table_name_size) {
+			fprintf(stderr, "%s:Create table entry command's table"
 				" key name len is %ld, but max allowed key"
 				" name len is %lu\n",
-				__FUNCTION__,(tk1 - tk)+1, table_name_size);
-		return false;
+				__FUNCTION__, strlen(tk1) + 1, table_name_size);
+			return false;
+		}
+		strcpy(table_name, tk1);
+		return true;
 	}
-	strncpy(table_name, tk, tk1 - tk+1);
-	table_name[(tk1 - tk) + 1] = '\0';
-	tk1+=2;
-	if (tk1 >= argv + strlen(argv)) {
-		fprintf(stderr,
-			"%s:Create table entry command's format is "
-			"\"table/<table_name>:<table_id>/<table_idx>\"."
-			"Here input required after table key name \"%s\"\n",
-			__FUNCTION__, table_name);
-		return false;
-	}
-	tk = strchr(tk1, '/');
-	if (tk1 == NULL) {
-		fprintf(stderr, "%s:Create table entry command's format is "
-				"\"table/<table_name>:<table_id>/<table_idx>\"."
-				"Here last '/' is missing around \"%s\".\n",
-				__FUNCTION__, tk);
-		return false;
-	}
-	tk--;
-	if ((tk - tk1)+1 > sizeof(arg_u16)) {
+
+	// tk1 is object id
+	if (strlen(tk1) + 1 > sizeof(arg_u16)) {
 		fprintf(stderr,
 			"%s:Create table entry command's table"
-			" key name id's length %ld, but max allowed key"
+			" key id's length %ld, but max allowed key"
 			" id len is %lu\n",
-			__FUNCTION__,(tk - tk1)+1,sizeof(arg_u16));
+			__FUNCTION__, strlen(tk1) + 1, sizeof(arg_u16));
 		return false;
 	}
-	strncpy(arg_u16, tk1, tk - tk1+1);
-	arg_u16[(tk - tk1) + 1] = '\0';
-	tk+=2;
-	if (tk >= argv + strlen(argv)) {
-		fprintf(stderr,
-			"%s:Create table entry command's format is "
-			"\"table/<table_name>:<table_id>/<table_idx>\"."
-			"Here input required after table key id \"%s\"\n",
-			__FUNCTION__, arg_u16);
-		return false;
-	}
-	ret_digit = strtoull(arg_u16, NULL, 0);	
+	strcpy(arg_u16, tk1);
+	ret_digit = strtoul(arg_u16, NULL, 0);	
 	errno_local = errno;
 	if (errno_local == EINVAL || errno_local == ERANGE) {
 		fprintf(stderr, "Expected u16 digit for table key id,"
@@ -492,35 +479,7 @@ static inline bool parse_element(const char *argv,
 				ret_digit, KPARSER_INVALID_ID);
 		return false;
 	}
-	*table_id = (__u16)ret_digit;
-
-	tk1 = argv + strlen(argv);
-	if ((tk1 - tk)+1 > sizeof(arg_u16)) {
-		fprintf(stderr,
-			"%s:Create table entry command's table"
-			" key index's length is %ld, but max allowed key"
-			" index len is %lu\n",
-			__FUNCTION__,(tk1 - tk)+1,sizeof(arg_u16));
-		return false;
-	}
-	strncpy(arg_u16, tk, tk1 - tk+1);
-	arg_u16[(tk1 - tk) + 1] = '\0';
-	ret_digit = strtoull(arg_u16, NULL, 0);	
-	errno_local = errno;
-	if (errno_local == EINVAL || errno_local == ERANGE) {
-		fprintf(stderr, "Expected u16 digit for table key idx,"
-				"errno: %d in strtoull().Try again.\n",
-				errno_local);
-		return false;
-	}
-	if (ret_digit >= KPARSER_INVALID_ID) {
-		fprintf(stderr, "Value %lu for table key idx is out of valid"
-				"range. Min: 0, Max: %d.Try again.\n",
-				ret_digit, KPARSER_INVALID_ID);
-		return false;
-	}
-	*idx = (__u16) ret_digit;
-
+	*table_id = (__u16) ret_digit;
 	return true;
 }
 
@@ -621,8 +580,8 @@ static int __do_cli(const struct kparser_global_namespaces *namespace,
 		const char *hybrid_token)
 {
 	size_t cmd_rsp_size = 0, old_cmd_rsp_size, w_offset, w_len, cmd_arg_len;
-	int ns_keys_bvs[16], type, elem_type, tbidx = -1, key_start_idx = 0;
 	bool ret = true, value_err = false, ignore_min_max = false;
+	int ns_keys_bvs[16], type, elem_type, key_start_idx = 0;
 	const struct kparser_arg_key_val_token *curr_arg;
 	size_t *dst_array_size, elem_offset, elem_size;
 	struct kparser_conf_cmd *cmd_arg = NULL;
@@ -643,7 +602,7 @@ static int __do_cli(const struct kparser_global_namespaces *namespace,
 
 	if (hybrid_token) {
 		ret = parse_element(hybrid_token, NULL, 0, tbn, sizeof(tbn),
-				&tbid, &tbidx);
+				&tbid);
 		if (!ret) {
 			fprintf(stderr, "object `%s`: token err:%s\n",
 					namespace->name, hybrid_token);
@@ -755,16 +714,6 @@ static int __do_cli(const struct kparser_global_namespaces *namespace,
 						&curr_arg->def_value, w_len);
 			break;
 
-		case KPARSER_ARG_VAL_HYB_IDX:
-			if (tbidx != -1) {
-				memcpy(((void *) cmd_arg) + w_offset,
-						&tbidx, w_len);
-				INCOMPATIBLE_KEY_CHECK;
-			} else
-				memcpy(((void *) cmd_arg) + w_offset,
-						&curr_arg->def_value, w_len);
-			break;
-  
 		case KPARSER_ARG_VAL_STR:
 			ret = parse_cmd_line_key_val_str(argc, argidx, argv,
 					curr_arg->mandatory, key,
@@ -1115,20 +1064,25 @@ static int do_cli(int op, int argc, int *argidx,
 {
 	const char *ns = NULL, *hybrid_token = NULL;
 	char namespace[KPARSER_MAX_NAME];
-	int i;
+	int i, slashcount = 0;
 
 	if (argc && (*argidx <= (argc - 1)) && argv) {
-		if (strchr(argv[*argidx], '/')) {
+		for (i = *argidx; i < strlen(argv[*argidx]); i++)
+			if (argv[*argidx][i] == '/')
+				slashcount++;
+		if (slashcount) {
+			if (slashcount != 1) {
+				fprintf(stderr,
+					"Invalid hybrid key format:`%s`,"
+					"expected:`object/<name>` or"
+					"`object/<id>`\n",
+					argv[*argidx]);
+				return EINVAL;;
+			}
 			hybrid_token = argv[*argidx];
 			if (!parse_element(argv[*argidx],
 					   namespace, sizeof(namespace),
-					   NULL, 0, NULL, NULL)) {
-				fprintf(stderr,
-					"Invalid hybrid key format: %s\n",
-					argv[*argidx]);
-				fprintf(stderr, "hybrid key format is:"
-					"object/<name>:<id>/<idx>\n");
-				return EINVAL;;
+					   NULL, 0, NULL)) {
 			}
 			ns = namespace;
 		} else
@@ -1212,7 +1166,6 @@ static const char *arg_val_type_str[] =
 	[KPARSER_ARG_VAL_ARRAY] = "array of hash keys (hkeys)",
 	[KPARSER_ARG_VAL_HYB_KEY_NAME] = "hash key name in hybrind format",
 	[KPARSER_ARG_VAL_HYB_KEY_ID] = "hash key ID in hybrind format",
-	[KPARSER_ARG_VAL_HYB_IDX] = "table index in hybrind format",
 	[KPARSER_ARG_VAL_INVALID] = "end of valid values"
 };
 
@@ -1386,7 +1339,6 @@ print_args:
 				case KPARSER_ARG_VAL_ARRAY:
 				case KPARSER_ARG_VAL_HYB_KEY_NAME:
 				case KPARSER_ARG_VAL_HYB_KEY_ID:
-				case KPARSER_ARG_VAL_HYB_IDX:
 				default:
 					break;
 				}
@@ -1589,7 +1541,6 @@ print_args:
 				case KPARSER_ARG_VAL_ARRAY:
 				case KPARSER_ARG_VAL_HYB_KEY_NAME:
 				case KPARSER_ARG_VAL_HYB_KEY_ID:
-				case KPARSER_ARG_VAL_HYB_IDX:
 				default:
 					break;
 				}

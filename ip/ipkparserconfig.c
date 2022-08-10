@@ -9,6 +9,7 @@
  * Authors:	Pratyush Khan <pratyush@sipanda.io>
  */
 
+
 #include <arpa/inet.h>
 #include <stdbool.h>
 #include <linux/kparser.h>
@@ -110,19 +111,6 @@
 		.def_value = def,					\
 		.max_value = max,					\
 		.print_id = KPARSER_PRINT_HEX,				\
-		.w_offset = offsetof(struct kparser_conf_cmd, member),	\
-		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->	\
-				member),				\
-		.help_msg = msg,					\
-	}
-
-#define KPARSER_ARG_H_K_IDX(key, member, min, max, def, msg)		\
-	{								\
-		.type = KPARSER_ARG_VAL_HYB_IDX,			\
-		.key_name = key,					\
-		.min_value = min,					\
-		.def_value = def,					\
-		.max_value = max,					\
 		.w_offset = offsetof(struct kparser_conf_cmd, member),	\
 		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->	\
 				member),				\
@@ -313,8 +301,6 @@ static const struct kparser_arg_key_val_token cond_exprs_table_key_vals[] =
 		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->
 				table_conf.key.id),
 	},
-	KPARSER_ARG_H_K_IDX("idx", table_conf.idx, 0, -1, -1,
-			"hybrid table index"),
 	{
 		.type = KPARSER_ARG_VAL_SET,
 		.key_name = "defaultfail",
@@ -352,6 +338,8 @@ static const struct kparser_arg_key_val_token cond_exprs_table_key_vals[] =
 			KPARSER_INVALID_ID,
 			"hybrid key id for the associated conditional"
 			" expression table"),
+	KPARSER_ARG_BOOL("addentry", table_conf.add_entry, false,
+			"add an element to a table", NULL, NULL),
 	KPARSER_ARG_HKEY("condexprs.name",
 			"condexprs.id", table_conf.elem_key,
 			"associated conditional expression entry's name or id",
@@ -374,8 +362,6 @@ static const struct kparser_arg_key_val_token cond_exprs_tables_key_vals[] =
 		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->
 				table_conf.key.id),
 	},
-	KPARSER_ARG_H_K_IDX("idx", table_conf.idx, 0, -1, -1,
-			"hybrid table index"),
 	KPARSER_ARG_H_K_N("condexprstable.name",
 			table_conf.key.name,
 			KPARSER_DEF_NAME_PREFIX,
@@ -387,6 +373,8 @@ static const struct kparser_arg_key_val_token cond_exprs_tables_key_vals[] =
 			KPARSER_INVALID_ID,
 			"hybrid key id for the associated table of"
 			" conditional expression table"),
+	KPARSER_ARG_BOOL("addentry", table_conf.add_entry, false,
+			"add an element to a table", NULL, NULL),
 	KPARSER_ARG_HKEY("condexprs.name",
 			"condexprs.id", table_conf.elem_key,
 			"associated table of conditional expression's"
@@ -450,8 +438,6 @@ static const struct kparser_arg_key_val_token counter_table_key_vals[] =
 		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->
 				table_conf.key.id),
 	},
-	KPARSER_ARG_H_K_IDX("idx", table_conf.idx, 0, -1, -1,
-			"hybrid table index"),
 	KPARSER_ARG_H_K_N("countertable.name",
 			table_conf.key.name,
 			KPARSER_DEF_NAME_PREFIX,
@@ -461,6 +447,8 @@ static const struct kparser_arg_key_val_token counter_table_key_vals[] =
 			KPARSER_USER_ID_MIN, KPARSER_USER_ID_MAX,
 			KPARSER_INVALID_ID,
 			"hybrid key id for the associated counter table"),
+	KPARSER_ARG_BOOL("addentry", table_conf.add_entry, false,
+			"add an element to a table", NULL, NULL),
 	KPARSER_ARG_HKEY("counter.name", "counter.id", table_conf.elem_key,
 			"associated counter table's name or id",
 			NULL, NULL),
@@ -1041,7 +1029,6 @@ static const struct kparser_arg_key_val_token proto_table_key_vals[] =
 		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->
 				table_conf.key.id),
 	},
-	KPARSER_ARG_H_K_IDX("idx", table_conf.idx, 0, -1, -1, "<TODO>"),
 	KPARSER_ARG_U(32, "value", table_conf.optional_value1,
 			0, 0xffffffff, 0,
 			"<TODO>", NULL, NULL),
@@ -1050,6 +1037,8 @@ static const struct kparser_arg_key_val_token proto_table_key_vals[] =
 	KPARSER_ARG_H_K_I("table.id", table_conf.key.id,
 			KPARSER_USER_ID_MIN, KPARSER_USER_ID_MAX,
 			KPARSER_INVALID_ID, "<TODO>"),
+	KPARSER_ARG_BOOL("addentry", table_conf.add_entry, false,
+			"add an element to a table", NULL, NULL),
 	KPARSER_ARG_HKEY("node.name", "node.id", table_conf.elem_key,
 			NULL, NULL,
 			"<TODO>", NULL, NULL),
@@ -1139,7 +1128,6 @@ static const struct kparser_arg_key_val_token tlv_proto_table_key_vals[] =
 		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->
 				table_conf.key.id),
 	},
-	KPARSER_ARG_H_K_IDX("idx", table_conf.idx, 0, -1, -1, "<TODO>"),
 	KPARSER_ARG_U(32, "tlvtype", table_conf.optional_value1,
 			0, 0xffffffff, 0, 
 			"<TODO>", NULL, NULL),
@@ -1148,6 +1136,8 @@ static const struct kparser_arg_key_val_token tlv_proto_table_key_vals[] =
 	KPARSER_ARG_H_K_I("table.id", table_conf.key.id,
 			KPARSER_USER_ID_MIN, KPARSER_USER_ID_MAX,
 			KPARSER_INVALID_ID, "<TODO>"),
+	KPARSER_ARG_BOOL("addentry", table_conf.add_entry, false,
+			"add an element to a table", NULL, NULL),
 	KPARSER_ARG_HKEY("tlvnode.name", "tlvnode.id", table_conf.elem_key,
 			"<TODO>", NULL, NULL),
 };
@@ -1202,8 +1192,6 @@ static const struct kparser_arg_key_val_token flag_field_table_key_vals[] =
 		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->
 				table_conf.key.id),
 	},
-	KPARSER_ARG_H_K_IDX("idx", table_conf.idx, 0, -1, -1,
-			"hybrid table index"),
 	KPARSER_ARG_H_K_N("table.name", table_conf.key.name,
 			KPARSER_DEF_NAME_PREFIX, "hybrid key name for the"
 			" associated flag field table"),
@@ -1211,6 +1199,8 @@ static const struct kparser_arg_key_val_token flag_field_table_key_vals[] =
 			KPARSER_USER_ID_MIN, KPARSER_USER_ID_MAX,
 			KPARSER_INVALID_ID, "hybrid id for the associated"
 			" flag field table"),
+	KPARSER_ARG_BOOL("addentry", table_conf.add_entry, false,
+			"add an element to a table", NULL, NULL),
 	KPARSER_ARG_HKEY("flag.name", "flag.id",
 			table_conf.elem_key,
 			"associated flag entry's name or id", NULL, NULL),
@@ -1265,7 +1255,6 @@ flag_field_proto_table_key_vals[] =
 		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->
 				table_conf.key.id),
 	},
-	KPARSER_ARG_H_K_IDX("idx", table_conf.idx, 0, -1, -1, "<TODO>"),
 	KPARSER_ARG_H_K_N("table.name", table_conf.key.name,
 			KPARSER_DEF_NAME_PREFIX, "<TODO>"),
 	KPARSER_ARG_H_K_I("table.id", table_conf.key.id,
@@ -1274,6 +1263,8 @@ flag_field_proto_table_key_vals[] =
 	KPARSER_ARG_U(32, "flagindex", table_conf.optional_value1,
 			0, 0xffffffff, 0,
 			"index of the flag/flag field", NULL, NULL),
+	KPARSER_ARG_BOOL("addentry", table_conf.add_entry, false,
+			"add an element to a table", NULL, NULL),
 	KPARSER_ARG_HKEY("flagsnode.name", "flagsnode.id",
 			table_conf.elem_key,
 			"<TODO>", NULL, NULL),
