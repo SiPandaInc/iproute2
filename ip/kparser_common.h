@@ -16,7 +16,7 @@
 #define KPARSER_SET_VAL_LEN_MAX		64
 #define KPARSER_DEFAULT_U16_MASK	0xffff
 #define KPARSER_DEFAULT_U32_MASK	0xffffffff
-#define KPARSER_CONFIG_MAX_KEYS		64 
+#define KPARSER_CONFIG_MAX_KEYS		128 
 
 enum kparser_arg_val_type {
 	KPARSER_ARG_VAL_STR,
@@ -41,6 +41,27 @@ struct kparser_arg_set {
 enum kparser_print_id {
 	KPARSER_PRINT_INT,
 	KPARSER_PRINT_HEX,
+};
+
+typedef int kparser_ns_arg_post_handler(
+		const void *ns,
+		int op, int argc, int *argidx,
+		const char **argv, const char *hybrid_token,
+		const int *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg);
+
+struct kparser_global_namespaces {
+	enum kparser_global_namespace_ids name_space_id;
+	const char *name;
+	const char *alias;
+	const char *description;
+	size_t arg_tokens_count;
+	const struct kparser_arg_key_val_token *arg_tokens; 
+	int create_attr_id;
+	int update_attr_id;
+	int read_attr_id;
+	int delete_attr_id;
+	int rsp_attr_id;
+	kparser_ns_arg_post_handler *post_process_handler;
 };
 
 struct kparser_arg_key_val_token {

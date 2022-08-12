@@ -7,6 +7,51 @@ die()
 
 #<< //// ... //// denotes usage/man comments.
 
+./ip/ip -j -p parser create counter name cntr.vlan			\
+		index 1							\
+		maxvalue 1						\
+		arraylimit 2						\
+		arrayelementsize 2					\
+		|| die "error"
+
+./ip/ip -j -p parser create counter name cntr.dummy			\
+		index 2							\
+		maxvalue 100						\
+		arraylimit 16						\
+		arrayelementsize 2					\
+		|| die "error"
+
+./ip/ip -j -p parser create metadata name md.cntr.vlantci		\
+		soff 0							\
+		doff 32							\
+		length 2						\
+		counter.name cntr.vlan					\
+		isframe true						\
+		|| die "error"
+
+./ip/ip -j -p parser create metadata name md.cntr.inc			\
+		type counter_mode					\
+		doff 28							\
+		counterid 1						\
+		counterdata 1						\
+		counterop counter_op_incr				\
+		isframe true						\
+		|| die "error"
+
+./ip/ip -j -p parser create metadata name md.cntr.store			\
+		type counter_mode					\
+		doff 12							\
+		counterid 1						\
+		counterdata 1						\
+		counterop counter_op_noop				\
+		|| die "error"
+
+./ip/ip -j -p parser create metalist name mdl.vlan			\
+		metadata.name md.cntr.vlantci				\
+		metadata.name md.cntr.inc				\
+		metadata.name md.cntr.store				\
+		|| die "error"
+
 << ////
 NOTE:
 creates an empty protocol table object whose id is 2 and name is table.ip
@@ -139,26 +184,24 @@ table's entries will be used next for the lookup of the next protocol.
 ./ip/ip -j -p parser create flags name flag.gre.seqno			\
 		flag 0x1000						\
 		size 4							\
-		networkendian true					\
 		|| die "error"
 ./ip/ip -j -p parser create flags name flag.gre.csum			\
 		flag 0x8000						\
 		size 4							\
-		networkendian true					\
 		|| die "error"
 ./ip/ip -j -p parser create flags name flag.gre.key			\
 		flag 0x2000						\
 		size 4							\
-		networkendian true					\
 		|| die "error"
 ./ip/ip -j -p parser create flags name flag.gre.ack			\
 		flag 0x0080						\
 		size 4							\
-		networkendian true					\
 		|| die "error"
 ./ip/ip -j -p parser create flagfields name flagslist.gre id 1		\
 		|| die "error"
+# TODO: make CLI update to combine create flags inline to create flagfields table 
 # following ordering and indexes are important, must be according to the flags
+# TODO: add flagsnode.name inline to flagfields/flagslist.gre
 ./ip/ip -j -p parser create flagfields/flagslist.gre:1/0		\
 		flag.name flag.gre.csum					\
 		|| die "error"
@@ -167,6 +210,7 @@ table's entries will be used next for the lookup of the next protocol.
 		|| die "error"
 ./ip/ip -j -p parser create flagfields/flagslist.gre:1/2		\
 		flag.name flag.gre.seqno				\
+		flagsnode.name flagsnode.gre				\
 		|| die "error"
 ./ip/ip -j -p parser create flagfields/flagslist.gre:1/3		\
 		flag.name flag.gre.ack					\
@@ -179,7 +223,6 @@ table's entries will be used next for the lookup of the next protocol.
 		|| die "error"
 ./ip/ip -j -p parser create flagstable/flagstable.gre:1/0		\
 		flagindex 2						\
-		flagsnode.name flagsnode.gre				\
 		|| die "error"
 ./ip/ip -j -p parser create metadata name md.gre.flags			\
 		type hdrdata						\
@@ -191,15 +234,21 @@ table's entries will be used next for the lookup of the next protocol.
 		|| die "error"
 ./ip/ip -j -p parser create metalist name mdl.gre			\
 		metadata.name md.gre.flags				\
+		metadata.name md.cntr.inc				\
+		metadata.name md.cntr.store				\
 		|| die "error"
+#./ip/ip -j -p parser create table/table.ip:2/3				\
+#		value 94						\
+#		encap true						\
+#		node.name node.ipv4					\
+#		|| die "error"
+# flagfieldsprototable.name should be removed since flagfieldsprototable.name will be internally expanded with flagfieldstable.name by CLI
 ./ip/ip -j -p parser create node name node.gre				\
 		type FLAGFIELDS						\
 		metadatatable.name mdl.gre				\
-		encap true						\
 		minlen 4 						\
 		flagsoff 0						\
 		flagslen 2						\
-		flagfieldhdrlen 4					\
 		flagfieldstable.name flagslist.gre			\
 		flagfieldsprototable.name flagstable.gre		\
 		|| die "error"
@@ -221,6 +270,7 @@ table's entries will be used next for the lookup of the next protocol.
 		prototable.name table.ip				\
 		|| die "error"
 ./ip/ip -j -p parser create node name node.vlan				\
+		metadatatable.name mdl.vlan				\
 		minlen 4 						\
 		nxtoffset 2						\
 		nxtlength 2						\
@@ -238,11 +288,6 @@ is "plain", above "node.ipv4" is a "plain" parse node.
 Note TCP options are variable length composite fields which are represented
 using an array of form "type-length-value" format.
 
-tlvstartoff 20, the relative start offset of the TLV fields in TCP header,
-which is 20 bytes from the start of the TCP header in this case for the very
-first TCP TLV.
-
-tlvtypeoff 0, denotes the relative offset in a TLV field. Since the very first
 value is the TLV type, it is 0.
 
 tlvtypelen 1, the size of the TLV's type field.
@@ -321,6 +366,15 @@ TCP options table in this case (i.e. MSS, SACK, TS etc.). The keys are tlvtypes.
 		minlen 10						\
 		metadatatable.name ml.tcp.tlv.ts			\
 		|| die "error"
+# TODO: remove index from all tables
+# and designate one field as key, and it can not be duplicate
+# e.g.
+#./ip/ip -j -p parser create tlvtable/table.tlv.tcp			\
+#		key 8							\
+#		node.name node.tlv.tcp.ts				\
+#		|| die "error"
+#
+# put ./ip/ip -j -p  inside a shell fn
 ./ip/ip -j -p parser create tlvtable name table.tlv.tcp id 1		\
 		|| die "error"
 ./ip/ip -j -p parser create tlvtable/table.tlv.tcp:1/0			\
@@ -343,18 +397,9 @@ TCP options table in this case (i.e. MSS, SACK, TS etc.). The keys are tlvtypes.
 		hdrlenlen 1						\
 		hdrlenmask 0xf0						\
 		hdrlenmultiplier 4					\
-		hdrlenrightshift 4					\
-		tlvsfixedstartoffset true				\
-		tlvsstartoff 20						\
-		tlvspad1enable true					\
 		tlvspad1val 1						\
-		tlvseolenable true					\
-		tlvsminlen 2						\
-		tlvstypelen 1						\
-		tlvslenoff 1						\
-		tlvslenlen 1						\
-		tlvslenmask 0xff					\
-		tlvtable.name table.tlv.tcp				\
+		tlvsstdfmt true						\
+		tlvstable.name table.tlv.tcp				\
 		|| die "error"
 echo "----------------------------------------------------------------------"
 << ////
@@ -443,12 +488,14 @@ frame_size specifies the metadata buffer size that user passed. This must
 match with the user passed buffer and must have enough space.
 root_node.name specifies the name of the protocol root node of this parser.
 ////
+#TODO: In KMOD, validate framesize with all the metadata nodes in parse tree
+# TODO: In KMOD, implicitly populate counters table from associated metadata
 ./ip/ip -j -p parser create parser name test_parser			\
 		maxnodes 12						\
 		maxencaps 3						\
 		maxframes 3						\
 		metametasize 20						\
-		framesize 28						\
+		framesize 36						\
 		rootnode.name node.ether				\
 		oknode.name node.parser_exit_ok				\
 		failnode.name node.parser_exit_fail			\

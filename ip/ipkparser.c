@@ -9,7 +9,6 @@
  * Authors:	Pratyush Khan <pratyush@sipanda.io>
  */
 
-
 #include <arpa/inet.h>
 #include <ctype.h>
 #include <errno.h>
@@ -21,6 +20,7 @@
 #include "utils.h"
 #include "ip_common.h"
 #include "kparser_common.h"
+
 
 static inline bool keymatches(const char *prefix, const char *string)
 {
@@ -382,10 +382,6 @@ static inline bool parse_cmd_line_key_val_ints(int argc, int *argidx,
 	}
 
 	memcpy(value, &ret_digit, value_len);
-	if (strcmp(key, "flag") == 0) {
-		printf("PK:%llu, %u %s\n", ret_digit, *(__u32 *) value, arg_val);
-	}
-
 
 	return true;
 }
@@ -581,9 +577,10 @@ static int __do_cli(const struct kparser_global_namespaces *namespace,
 {
 	size_t cmd_rsp_size = 0, old_cmd_rsp_size, w_offset, w_len, cmd_arg_len;
 	bool ret = true, value_err = false, ignore_min_max = false;
-	int ns_keys_bvs[16], type, elem_type, key_start_idx = 0;
+	int ns_keys_bvs[KPARSER_CONFIG_MAX_KEYS], type, elem_type;
 	const struct kparser_arg_key_val_token *curr_arg;
 	size_t *dst_array_size, elem_offset, elem_size;
+	int i, j, rc, op_attr_id, key_start_idx = 0;
 	struct kparser_conf_cmd *cmd_arg = NULL;
 	char types_buf[KPARSER_SET_VAL_LEN_MAX];
 	size_t offset_adjust, elem_counter;
@@ -592,7 +589,6 @@ static int __do_cli(const struct kparser_global_namespaces *namespace,
 	const char *key, *dependent_Key;
 	const char **incompatible_keys;
 	size_t incompatible_keys_len;
-	int i, j, rc, op_attr_id;
 	void *scratch_buf = NULL;
 	int other_mandatory_idx;
 	void *cmd_rsp = NULL;
@@ -608,6 +604,13 @@ static int __do_cli(const struct kparser_global_namespaces *namespace,
 					namespace->name, hybrid_token);
 			return EINVAL;
 		}
+	}
+
+	if (namespace->arg_tokens_count >= KPARSER_CONFIG_MAX_KEYS) {
+		fprintf(stderr, "object `%s`: key count %lu more than max %d\n",
+				namespace->name, namespace->arg_tokens_count,
+				KPARSER_CONFIG_MAX_KEYS);
+		return EINVAL;
 	}
 
 	cmd_arg_len = sizeof(*cmd_arg);
@@ -1014,6 +1017,17 @@ array_parse_start:
 					namespace->name, argv[i],
 					progname, namespace->name);
 			rc = EINVAL;
+			goto out;
+		}
+	}
+
+	if (namespace->post_process_handler) {
+		rc = namespace->post_process_handler(namespace, op, argc,
+				argidx, argv, hybrid_token, ns_keys_bvs,
+				cmd_arg);
+		if (rc != 0) {
+			fprintf(stderr, "%s: post processing failed\n",
+					namespace->name);
 			goto out;
 		}
 	}

@@ -14,15 +14,10 @@ ipcmd() {
 }
 
 ipcmd parser create counter name cntr.vlan.1				\
-		maxvalue 1						\
+		index 0							\
+		maxvalue 2						\
 		arraylimit 2						\
-		arrayelementsize 2					\
-
-ipcmd parser create countertable name cntrstable.1
-
-ipcmd parser create countertable/cntrstable.1				\
-		addentry true						\
-		counter.name cntr.vlan.1				\
+		arrayelementsize 2
 
 ipcmd parser create metadata name md.cntr.vlantci		\
 		soff 0							\
@@ -133,7 +128,7 @@ Value extracted using nxtoffset and nxtlength along with protocol
 table's entries will be used next for the lookup of the next protocol.
 ////
 ipcmd parser create node name node.ether			\
-		prototable.name table.ether				\
+		nxttable.name table.ether				\
 		minlen 14						\
 		nxtoffset 12						\
 		nxtlength 2
@@ -152,37 +147,32 @@ proto_table.name states the associated protocol table (i.e. table.ip)
 Value extracted using nxtoffset and nxtlength along with protocol
 table's entries will be used next for the lookup of the next protocol.
 ////
-ipcmd parser create metadata name md.gre.seqno_offset		\
+ipcmd parser create metadata name md.gre.seqno_offset			\
 		type offset						\
 		doff 22							\
 		isframe true
-ipcmd parser create metadata name md.gre.seqno			\
+ipcmd parser create metadata name md.gre.seqno				\
 		type hdrdata						\
 		soff 0							\
 		doff 24							\
 		length 4						\
 		isframe true						\
 		isendianneeded true
-ipcmd parser create metalist name ml.gre.seqno			\
+ipcmd parser create metalist name ml.gre.seqno				\
 		metadata.name md.gre.seqno_offset			\
 		metadata.name md.gre.seqno
-ipcmd parser create flags name flag.gre.seqno			\
+ipcmd parser create flags name flag.gre.seqno				\
 		flag 0x1000						\
-		size 4							\
-		networkendian true
-# TODO: remove networkendian from cli, make is always true
-ipcmd parser create flags name flag.gre.csum			\
+		size 4
+ipcmd parser create flags name flag.gre.csum				\
 		flag 0x8000						\
-		size 4							\
-		networkendian true
-ipcmd parser create flags name flag.gre.key			\
+		size 4
+ipcmd parser create flags name flag.gre.key				\
 		flag 0x2000						\
-		size 4							\
-		networkendian true
-ipcmd parser create flags name flag.gre.ack			\
+		size 4
+ipcmd parser create flags name flag.gre.ack				\
 		flag 0x0080						\
-		size 4							\
-		networkendian true
+		size 4
 ipcmd parser create flagfields name flagslist.gre id 1
 # TODO: make CLI update to combine create flags inline to create flagfields table 
 # following ordering and indexes are important, must be according to the flags
@@ -210,27 +200,22 @@ ipcmd parser create metadata name md.gre.flags			\
 		isendianneeded true
 ipcmd parser create metalist name mdl.gre			\
 		metadata.name md.gre.flags				\
-# TODO: type should be optional, FLAGFIELDS can be detected by checking
-# flag specific fields
-# TODO: validate flags and tlvs are mutually exclusive
 #ipcmd parser create table/table.ip				\
-#		value 94						\
+#		key 94						\
 #		encap true						\
 #		node.name node.ipv4					\
 # change encap true to nxtencap for nodes
 # rename prototable.name to nxttable
-# flagfieldhdrlen def is minlen
-# prefix all change to "flags*"
-ipcmd parser create node name node.gre				\
-		type FLAGFIELDS						\
+ipcmd parser create node name node.gre					\
 		metadatatable.name mdl.gre				\
+		nxtencap true						\
 		minlen 4 						\
 		flagsoff 0						\
 		flagslen 2						\
-		flagfieldhdrlen 4					\
-		flagfieldstable.name flagslist.gre			\
-		flagfieldsprototable.name flagstable.gre
-ipcmd parser create node name node.ipv4				\
+		flagsfieldstable.name flagslist.gre			\
+		flagsfieldsprototable.name flagstable.gre
+
+ipcmd parser create node name node.ipv4					\
 		metadatatable.name mdl.ipv4				\
 		minlen 20 						\
 		hdrlenoff 0						\
@@ -239,18 +224,18 @@ ipcmd parser create node name node.ipv4				\
 		hdrlenmultiplier 4					\
 		nxtoffset 9						\
 		nxtlength 1						\
-		prototable.name table.ip
-ipcmd parser create node name node.ipv6				\
+		nxttable.name table.ip
+ipcmd parser create node name node.ipv6					\
 		minlen 40 						\
 		nxtoffset 6						\
 		nxtlength 1						\
-		prototable.name table.ip
+		nxttable.name table.ip
 ipcmd parser create node name node.vlan				\
 		metadatatable.name mdl.vlan				\
 		minlen 4 						\
 		nxtoffset 2						\
 		nxtlength 2						\
-		prototable.name table.ether
+		nxttable.name table.ether
 echo "----------------------------------------------------------------------"
 << ////
 NOTE:
@@ -348,25 +333,15 @@ ipcmd parser create tlvtable/table.tlv.tcp			\
 		tlvtype 5						\
 		tlvnode.name node.tlv.tcp.sack
 ipcmd parser create node name node.tcp				\
-		type TLV						\
 		metadatatable.name mdl.tcp				\
 		minlen 20						\
 		hdrlenoff 12						\
 		hdrlenlen 1						\
 		hdrlenmask 0xf0						\
 		hdrlenmultiplier 4					\
-		hdrlenrightshift 4					\
-		tlvsfixedstartoffset true				\
-		tlvsstartoff 20						\
-		tlvspad1enable true					\
-		tlvspad1val 1						\
-		tlvseolenable true					\
-		tlvsminlen 2						\
-		tlvstypelen 1						\
-		tlvslenoff 1						\
-		tlvslenlen 1						\
-		tlvslenmask 0xff					\
-		tlvtable.name table.tlv.tcp
+		tlvspad1 1						\
+		tlvseol 0						\
+		tlvstable.name table.tlv.tcp
 echo "----------------------------------------------------------------------"
 << ////
 NOTE:
@@ -374,22 +349,22 @@ creates an entry to the previously created empty protocol table object whose id
 is 1 and name is table.ether (ref. <table.ether:1>)
 The index of this table's entry is 0 (ref. <table.ether>)
 Table's entry points to the previously created parse node identified by
-name "node.name node.ipv4". value 0x800 specifies the ether's protocol value
+name "node.name node.ipv4". key 0x800 specifies the ether's protocol value
 for IPv4.
 ////
 ipcmd parser create table/table.ether			\
 		addentry true	\
-		value 0x800						\
+		key 0x800						\
 		node.name node.ipv4
 
 ipcmd parser create table/table.ether			\
 		addentry true	\
-		value 0x8100						\
+		key 0x8100						\
 		node.name node.vlan
 
 ipcmd parser create table/table.ether			\
 		addentry true	\
-		value 0x86dd						\
+		key 0x86dd						\
 		node.name node.ipv6
 
 echo "----------------------------------------------------------------------"
@@ -399,22 +374,22 @@ creates an entry to the previously created empty protocol table object whose id
 is 1 and name is table.ip (ref. <table.ip:2>)
 The index of this table's entry is 0 (ref. <table.ip>)
 Table's entry points to the previously created parse node identified by
-name "node.name node.tcp". value 0x6 specifies the IPv4's protocol value
+name "node.name node.tcp". key 0x6 specifies the IPv4's protocol value
 for TCP.
 ////
 ipcmd parser create table/table.ip				\
 		addentry true	\
-		value 0x6						\
+		key 0x6						\
 		node.name node.tcp
 
 ipcmd parser create table/table.ip				\
 		addentry true	\
-		value 4							\
+		key 4							\
 		node.name node.ipv4
 
 ipcmd parser create table/table.ip				\
 		addentry true	\
-		value 47						\
+		key 47						\
 		node.name node.gre
 echo "----------------------------------------------------------------------"
 ipcmd parser create metadata name md.num_nodes			\
@@ -454,7 +429,6 @@ ipcmd parser create parser name test_parser			\
 		maxframes 3						\
 		metametasize 18						\
 		framesize 34						\
-		cntrstable.name cntrstable.1				\
 		rootnode.name node.ether				\
 		oknode.name node.parser_exit_ok				\
 		failnode.name node.parser_exit_fail
