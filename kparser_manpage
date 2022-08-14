@@ -1,0 +1,432 @@
+.TH kParser 1 2022-08-13 Linux kParser CLI and KMOD APIs Manual
+
+.SH NAME
+kParser \- The Kernel Parser, a parameterized parser for Linux Kernel
+
+.SH SYNOPSIS
+ip [ 
+.I OPTIONS 
+] parser {
+.I OPERATIONS
+{
+.I OBJECTS
+{
+.I IDENTIFIERS
+}
+.I OBJECT-ARGUMENTS
+}
+}
+| help
+.PP
+.I OPTIONS
+:=
+{
+.BR -j
+|
+.BR -p
+|
+.BR -j	-p
+}
+.PP
+.I OPERATIONS
+:=
+{
+.BR create
+|
+.BR read
+|
+.BR update
+|
+.BR delete
+|
+.BR lock
+|
+.BR unlock
+}
+.PP
+.I OBJECTS
+:=
+{
+.BR condexprs
+|
+.BR condexprslist
+|
+.BR condexprstable
+|
+.BR counter
+|
+.BR metadata
+|
+.BR metalist
+|
+.BR node
+|
+.BR table
+|
+.BR tlvnode
+|
+.BR tlvtable
+|
+.BR flagfieldstable
+|
+.BR parser
+}
+.PP
+.I IDENTIFIERS
+:=
+{
+.I name
+|
+.I id
+|
+.I both
+}
+.PP
+.I name
+:= maximum 128 bytes name, unique per OBJECT
+.PP
+.I id
+:= unsigned 16 bit id, value 0 to 32768, unique per OBJECT
+.PP
+.SS "OBJECT-ARGUMENTS"
+.TP
+condexprs {ARGUMENTS} :=
+.nf
+	{type, srcoff, len, mask}
+.fi
+.PP
+condexprslist {ARGUMENTS} :=
+.nf
+	{defaultfail, type, condexprs.name | condexprs.id}
+.fi
+.PP
+condexprstable {ARGUMENTS} :=
+.nf
+{condexprslist.name | condexprslist.id}
+.fi
+.PP
+counter {ARGUMENTS} :=
+.nf
+	{index, maxvalue, arraylimit, arrayelementsize, resetonencap,
+	 overwritelast, erroronexceeded}
+.fi
+.PP
+metadata {ARGUMENTS} :=
+.nf
+	{type, counterop, isframe, isendianneeded, counterid, counterdata,
+	 constantvalue, soff, doff, length, addoff}
+.fi
+.PP
+metalist {ARGUMENTS} :=
+.nf
+	{metadata.id | metadata.name}
+.fi
+.PP
+node {ARGUMENTS} :=
+.nf
+	{type, unknownret, nxttable.name | nxttable.id,
+	 wildcardparsenode.name | wildcardparsenode.id,
+	 metadatatable.name | metadatatable.id, nxtencap,
+	 overlay, minlen, hdrlenoff, hdrlenlen, hdrlenendian,
+	 hdrlenmask, hdrlenrightshift, hdrlenmultiplier, hdrlenaddvalue,
+	 nxtoffset, nxtmask, nxtlength, nxtrightshift,
+	 condexprstable.name | condexprstable.id},
+.fi
+.PP
+.BR AND/OR
+.PP
+{
+.PP
+.BR type == TLV
+.nf
+	{tlvhdrlenoff, tlvhdrlenlen, tlvhdrlenendian, tlvhdrlenmask,
+	 tlvhdrlenrightshift, tlvhdrlenmultiplier, tlvhdrlenaddvalue,
+	 tlvslenoff, tlvslenlen, tlvslenendian, tlvslenmask,
+	 tlvslenrightshift, tlvslenmultiplier, tlvshdrlenaddvalue,
+	 tlvstypeoff, tlvstypemask, tlvstypelen, tlvstyperightshift,
+	 tlvsstartoff, tlvspad1, tlvspadn, tlvseol, tlvsstndfmt,
+	 tlvsstndfmt, tlvsminlen, unknowntlvtyperet,
+	 tlvstable.name | tlvstable.id,
+	 tlvwildcardnode.name | tlvwildcardnode.id,
+	 tlvsmaxloop, tlvsmaxnon, tlvsmaxplen, tlvsmaxcpad,
+	 tlvsdisplimitexceed, tlvsexceedloopcntiserr},
+.fi
+.PP
+OR
+.PP
+.BR type == FLAGFILED 
+.nf
+	{flagsoff, flagsmask, flagslen, flagsfieldhdrlen, flagsfieldoff,
+	 flagsfieldlen, flagsfieldendian, flagsfieldmask,
+	 flagsfieldrightshift, flagsfieldmultiplier, flagsfieldaddvalue,
+	 flagsfieldstable.name | flagfieldstable.id}
+.fi
+.PP
+}
+.PP
+table {ARGUMENTS} :=
+.nf
+	{key, node.name | node.id}
+.fi
+.PP
+tlvnode {ARGUMENTS} :=
+.nf
+	{minlen, maxlen, padding, overlaytypeoff, overlaytypemask,
+	 overlaytypesize, overlaytyperightshift,
+	 condexprstable.name | condexprstable.id, unknownret,
+	 overlaynxttlvstable.name | overlaynxttlvstable.id,
+	 overlaywildcardnode.name | overlaywildcardnode.id,
+	 metadatatable.name | metadatatable.id}
+.fi
+.PP
+tlvtable {ARGUMENTS} :=
+.nf
+	{tlvtype, tlvnode.name | tlvnode.id}
+.fi
+.PP
+flagfieldstable {ARGUMENTS} :=
+.nf
+	{key, flags.name | flags.id, flags.flag, flags.size,
+	 metadatatable.name | metadatatable.id,
+	 condexprstable.name | condexprstable.id}
+.fi
+.PP
+parser {ARGUMENTS} :=
+.nf
+	{flags, maxnodes, maxencaps, maxframes, metametasize, framesize,
+	 rootnode.name | rootnode.id, oknode.name | oknode.id,
+	 failnode.name | failnode.id, atencapnode.name | atencapnode.id}
+.fi
+.PP
+
+.SH DESCRIPTION
+.\" sample comment.
+.BR kParser
+stands for
+.BR "The Kernel Parser".
+This is a programmable network packet parser which is a ported version of
+the
+.BR PANDA
+parser. For the introduction to the basic building blocks of
+.BR PANDA
+parser, refer
+.UR https://github.com/panda-net/panda/blob/main/documentation/parser.md
+.UE
+The iproute2 netlink CLI for the kParser works in tandem with the KMOD
+kParser. Hence the KMOD kParser must be loaded before the kParser enabled
+iproute2 CLI can be used to configure and use it.
+kParser is highly programmable, there is no need to write new code or
+compile any additional code to add any types of network protocol packet
+parsing support. Also unloading/reloading of the KMOD is also not needed.
+Only the ip kParser CLI is sufficient to configure and teach the KMOD
+kParser about how to parse any new protocol and add that capability to
+Linux Kernel.
+
+.SH "ip OPTIONS"
+the kParser CLI works with ip. Use the -j and -p options with ip to get
+formatted JSON output from kParser CLI.
+.PP
+
+.SH OPERATIONS
+.B create
+.nf
+	Create an object.
+.fi
+
+.B read
+.nf
+	Read an object.
+.fi
+
+.B update
+.nf
+	Modify an object.
+.fi
+
+.B delete
+.nf
+	Delete an object.
+.fi
+
+.B lock
+.nf
+	lock a parser to make parse tree read-only.
+.fi
+
+.B unlock
+.nf
+	unlock a parser to make parse tree mutable again.
+.fi
+
+.SH OBJECTS 
+.B condexprs
+.nf
+	Conditional expressions
+	This is to define and configure various complex conditional
+	expressions in kParser. They are used to validate certain
+	conditions for protocol packet field values.
+	e.g. <TODO>
+.fi
+
+.B condexprslist
+.nf
+	"A list of conditional expressions."
+	List of Conditional expressions to create more complex and
+	composite expressions involving more than one expression.
+	e.g. <TODO>
+.fi
+
+.B condexprstable
+.nf
+	"A table of list of conditional expressions."
+	A table of Conditional expressions to associate it with packet
+	parsing action handlers, i.e. node.
+	e.g. <TODO>
+.fi
+
+.B counter
+.nf
+	"Counter object."
+	Use it to create and configure counter. Can be used for a wide
+	range of usages.
+	e.g. Count how many VLAN headers were parsed, how many TCP
+	options are encountered etc.
+	NOTE: Globally the kParser KMOD supports max 7 counters.
+	These counters can be shared accross multiple parsers via their
+	association with metadata objects.
+.fi
+
+.B metadata
+.nf
+	"Metadata object."
+	Defines the metadata structures that will be passed to the
+	kParser datapath parser API by the user. This basically
+	defines a specific metadata extraction rule. This must match
+	with the user passed metadata structure in the datapath API.
+	e.g. <TODO>
+.fi
+
+.B metalist
+.nf
+	"Metalist object."
+	A list of metadata to associate it with packet parsing action
+	handlers, i.e. node.
+	e.g. <TODO>
+.fi
+
+.B node
+.nf
+	"node object."
+	A node represent a specific protocol header. Defining protocol
+	handler involves multiple work, i.e.configure the parser about
+	the associated protocol's packet header, e.g. minimum header
+	length, where to look for the next protocol field in the packet,
+	etc.
+	Along with that, it also defines the rules/handlers to parse and
+	store the required metadata by associating a metalist.
+	The table to find the next protocol node is attached to node.
+	node can be 3 types: PLAIN, TLVS and FLAGFIELDS.
+	PLAIN nodes are the basic protocol headers.
+	TLVS nodes are the Type-Length-Value protocol headers, such as
+	TCP. They also binds a tlvtable to a node.
+	FLAGFIELDS are indexed flag and associated flag fields protocol
+	headers, such as GRE headers. It also binds a flagstable with
+	a node.
+.fi
+
+.B table
+.nf
+	"table object."
+	A table is a protocol table, which associated a protocol number
+	with a node. e.g. ethernet protocol type 0x8000 in network order
+	means the next node after ethernet header is IPv4.
+
+	NOTE: table has key, key must be unique. Usually this key is
+	protocol number, such as ethernet type, or IPv4 protocol number
+	etc.
+.fi
+
+.B tlvnode
+.nf
+	"tlvnode object."
+	A tlvnode defines a specific TLV parsing rule, e.g. to parse
+	TCP option MSS, a new tlvnode needs to be defined.
+	Each tlvnode can also associate a metalist with the TLV parsing
+	rule, i.e. tlvnode
+.fi
+
+.B tlvtable
+.nf
+	"tlvtable object."
+	This is a table of multiple tlvnode(s) where the key are types
+	of TLVs (e.g. tlvnode defined for TCP MSS should have the type
+	/kind value set to 2.
+.fi
+
+.B flagfieldstable
+.nf
+	"A table of flag and associated flagfields."
+	This defines a table of flagfields and associate them with their
+	respective flag values via their indexes. Here the keys are
+	usually indexes, because in typical flag based protocol header,
+	such as GRE, the flagfields appear in protocol packet in the
+	same order as the set flag bits. The flag is defined by the flag
+	value, mask, size and associated metalist.
+.fi
+
+.B parser
+.nf
+	"A parser object (i.e. root context of parse graph)."
+	A parser represents a parse tree. It defines the user metadata
+	and metametadata structure size, number of parsing node and
+	encapsulation limits, root node for the parse tree, success and
+	failure case exit nodes.
+.fi
+
+
+.SH ARGUMENTS for each OBJECT 
+.B condexprs
+.nf
+	type:	type of conditional, valid values are:
+			`CONDEXPR_TYPE_EQUAL`
+			`CONDEXPR_TYPE_NOTEQUAL`
+			`CONDEXPR_TYPE_LT`
+			`CONDEXPR_TYPE_LTE`
+			`CONDEXPR_TYPE_GT`
+			`CONDEXPR_TYPE_GTE`
+
+	srcoff:	packet data field's start offset for evaluation,
+			an unsigned 16 bit number
+	len:		packet data field length for evaluation,
+			an unsigned 16 bit number
+	mask:	mask to extract the packet data field,
+			an unsigned 16 bit number
+.fi
+
+
+.SH "RETURN VALUE"
+What the program or function returns if successful.
+.SH ERRORS
+TODO
+.SH EXAMPLES
+TODO
+.SH NOTES
+TODO
+Miscellaneous commentary.
+.SH CAVEATS
+TODO: Things to take special care with, sometimes called WARNINGS.
+.SH DIAGNOSTICS
+All the possible error messages the program can print out,
+what they mean, and how to correct them if applicable.
+.SH BUGS
+Things that are broken or just don't work quite right.
+.SH RESTRICTIONS
+Bugs you don't plan to fix. :-)
+.SH AUTHOR
+Who wrote it (or AUTHORS if multiple).
+.SH HISTORY
+Programs derived from other sources sometimes have this.
+.SH "SEE ALSO"
+.\" Always quote multiple words for .SH
+Other man pages to check out, like
+TODO
