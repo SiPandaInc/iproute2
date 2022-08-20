@@ -13,35 +13,42 @@ ipcmd() {
 	./ip/ip -j -p "$@" || die "command \`$1 $2 $3 $4 $5\` failed."
 }
 
+# define the counter used for VLAN
+# vlan metadata (tci) size is 2, and max count is also 2
+# This gets slot 0 of the global counter table of size 7
 ipcmd parser create counter name cntr.vlan.1				\
 		index 0							\
 		maxvalue 2						\
 		arraylimit 2						\
 		arrayelementsize 2
 
-ipcmd parser create metadata name md.cntr.vlantci		\
+#define the vlan tci metadata extraction rule
+
+ipcmd parser create metadata name md.cntr.vlantci			\
 		soff 0							\
 		doff 30							\
 		length 2						\
 		counterid 1						\
 		isframe true						\
 
-ipcmd parser create metadata name md.cntr.inc			\
+# define increment operation for counter id 1
+# note: id 1 corresponds to index 0 above
+ipcmd parser create metadata name md.cntr.inc				\
+		type counter_mode					\
+		counterid 1						\
+		counterdata 1						\
+		counterop counter_op_incr				\
+
+# define where to store the counter value in user metadata
+ipcmd parser create metadata name md.cntr.store				\
 		type counter_mode					\
 		doff 28							\
 		counterid 1						\
 		counterdata 1						\
-		counterop counter_op_incr				\
-		isframe true						\
-
-ipcmd parser create metadata name md.cntr.store			\
-		type counter_mode					\
-		doff 12							\
-		counterid 1						\
-		counterdata 1						\
 		counterop counter_op_noop				\
+		isframe true
 
-ipcmd parser create metalist name mdl.vlan			\
+ipcmd parser create metalist name mdl.vlan				\
 		metadata.name md.cntr.vlantci				\
 		metadata.name md.cntr.inc				\
 		metadata.name md.cntr.store				\
@@ -70,31 +77,31 @@ addoff 53 tells to add 53 bits with the extracted header length to calculate
 the final position of the desired bit field's offset.
 Note that for offset, the write length is always 2 bytes.
 ////
-ipcmd parser create metadata name md.fragment_bit_offset	\
+ipcmd parser create metadata name md.fragment_bit_offset		\
 		type bit_offset						\
 		doff 0							\
 		addoff 53						\
 		isframe true
 echo "----------------------------------------------------------------------"
-ipcmd parser create metadata name md.src_address_offset		\
+ipcmd parser create metadata name md.src_address_offset			\
 		type offset						\
 		addoff 12						\
 		doff 2							\
 		isframe true
 echo "----------------------------------------------------------------------"
-ipcmd parser create metadata name md.dst_address_offset		\
+ipcmd parser create metadata name md.dst_address_offset			\
 		type offset						\
 		addoff 16						\
 		doff 4							\
 		isframe true
 echo "----------------------------------------------------------------------"
-ipcmd parser create metadata name md.tcp.src_port		\
+ipcmd parser create metadata name md.tcp.src_port			\
 		type offset						\
 		addoff 0						\
 		doff 6							\
 		isframe true
 echo "----------------------------------------------------------------------"
-ipcmd parser create metadata name md.tcp.dst_port		\
+ipcmd parser create metadata name md.tcp.dst_port			\
 		type offset						\
 		addoff 2						\
 		doff 8							\
@@ -106,11 +113,11 @@ creates a metalist object identified by name "mdl.tcp"
 associated metadata objects are specified using fields metadata.name <name>
 Note: metadata.id can also be used here instead, but not both.
 ////
-ipcmd parser create metalist name mdl.tcp			\
+ipcmd parser create metalist name mdl.tcp				\
 		metadata.name md.tcp.src_port				\
 		metadata.name md.tcp.dst_port
 echo "----------------------------------------------------------------------"
-ipcmd parser create metalist name mdl.ipv4			\
+ipcmd parser create metalist name mdl.ipv4				\
 		metadata.name md.dst_address_offset			\
 		metadata.name md.src_address_offset 			\
 		metadata.name md.fragment_bit_offset
@@ -127,7 +134,7 @@ proto_table.name states the associated protocol table (i.e. table.ether)
 Value extracted using nxtoffset and nxtlength along with protocol
 table's entries will be used next for the lookup of the next protocol.
 ////
-ipcmd parser create node name node.ether			\
+ipcmd parser create node name node.ether				\
 		nxttable.name table.ether				\
 		minlen 14						\
 		nxtoffset 12						\
@@ -173,32 +180,36 @@ ipcmd parser create flags name flag.gre.key				\
 ipcmd parser create flags name flag.gre.ack				\
 		flag 0x0080						\
 		size 4
-ipcmd parser create flagfields name flagslist.gre id 1
+ipcmd parser create flagfields name flagslist.gre
 # TODO: make CLI update to combine create flags inline to create flagfields table 
 # following ordering and indexes are important, must be according to the flags
-ipcmd parser create flagfields/flagslist.gre		\
-		flag.name flag.gre.csum
-ipcmd parser create flagfields/flagslist.gre		\
-		flag.name flag.gre.key
-ipcmd parser create flagfields/flagslist.gre		\
-		flag.name flag.gre.seqno
-ipcmd parser create flagfields/flagslist.gre		\
-		flag.name flag.gre.ack
-ipcmd parser create flagsnode name flagsnode.gre		\
+ipcmd parser create flagfields/flagslist.gre				\
+		flag.name flag.gre.csum					\
+		addentry true
+ipcmd parser create flagfields/flagslist.gre				\
+		flag.name flag.gre.key					\
+		addentry true
+ipcmd parser create flagfields/flagslist.gre				\
+		flag.name flag.gre.seqno				\
+		addentry true
+ipcmd parser create flagfields/flagslist.gre				\
+		flag.name flag.gre.ack					\
+		addentry true
+ipcmd parser create flagsnode name flagsnode.gre			\
 		metadatatable.name ml.gre.seqno
-ipcmd parser create flagstable name flagstable.gre id 1
-ipcmd parser create flagstable/flagstable.gre		\
-		addentry true	\
+ipcmd parser create flagstable name flagstable.gre
+ipcmd parser create flagstable/flagstable.gre				\
+		addentry true						\
 		flagindex 2						\
 		flagsnode.name flagsnode.gre
-ipcmd parser create metadata name md.gre.flags			\
+ipcmd parser create metadata name md.gre.flags				\
 		type hdrdata						\
 		soff 0							\
 		doff 20							\
 		length 2						\
 		isframe true						\
 		isendianneeded true
-ipcmd parser create metalist name mdl.gre			\
+ipcmd parser create metalist name mdl.gre				\
 		metadata.name md.gre.flags				\
 #ipcmd parser create table/table.ip				\
 #		key 94						\
@@ -230,7 +241,7 @@ ipcmd parser create node name node.ipv6					\
 		nxtoffset 6						\
 		nxtlength 1						\
 		nxttable.name table.ip
-ipcmd parser create node name node.vlan				\
+ipcmd parser create node name node.vlan					\
 		metadatatable.name mdl.vlan				\
 		minlen 4 						\
 		nxtoffset 2						\
@@ -272,67 +283,67 @@ are enabled and respective values are tlvpad1 and tlveol.
 tlv_proto_table.id specifies the pre-existing tlv proto table id. This is the
 TCP options table in this case (i.e. MSS, SACK, TS etc.). The keys are tlvtypes. 
 ////
-ipcmd parser create metadata name md.tcp.tlv.sack.leftedge	\
+ipcmd parser create metadata name md.tcp.tlv.sack.leftedge		\
 		type offset						\
 		addoff 2						\
 		doff 16							\
 		isframe true
-ipcmd parser create metadata name md.tcp.tlv.sack.rightedge	\
+ipcmd parser create metadata name md.tcp.tlv.sack.rightedge		\
 		type offset						\
 		addoff 6						\
 		doff 18							\
 		isframe true
-ipcmd parser create metadata name md.tcp.tlv.mss		\
+ipcmd parser create metadata name md.tcp.tlv.mss			\
 		type offset						\
 		addoff 2						\
 		doff 10							\
 		isframe true
-ipcmd parser create metadata name md.tcp.tlv.ts			\
+ipcmd parser create metadata name md.tcp.tlv.ts				\
 		type hdrdata						\
 		soff 2							\
 		doff 12							\
 		length 4						\
 		isframe true
-ipcmd parser create metalist name ml.tcp.tlv.sack.10		\
+ipcmd parser create metalist name ml.tcp.tlv.sack.10			\
 		metadata.name md.tcp.tlv.sack.leftedge			\
 		metadata.name md.tcp.tlv.sack.rightedge
-ipcmd parser create metalist name ml.tcp.tlv.mss		\
+ipcmd parser create metalist name ml.tcp.tlv.mss			\
 		metadata.name md.tcp.tlv.mss
-ipcmd parser create metalist name ml.tcp.tlv.ts			\
+ipcmd parser create metalist name ml.tcp.tlv.ts				\
 		metadata.name md.tcp.tlv.ts
-ipcmd parser create tlvnode name node.tlv.tcp.sack10		\
+ipcmd parser create tlvnode name node.tlv.tcp.sack10			\
 		minlen 10						\
 		metadatatable.name ml.tcp.tlv.sack.10
 ipcmd parser create tlvtable name table.tlv.tcp.sack
-ipcmd parser create tlvtable/table.tlv.tcp.sack		\
-		addentry true	\
+ipcmd parser create tlvtable/table.tlv.tcp.sack				\
+		addentry true						\
 		tlvtype 10						\
 		tlvnode.name node.tlv.tcp.sack10
-ipcmd parser create tlvnode name node.tlv.tcp.sack		\
+ipcmd parser create tlvnode name node.tlv.tcp.sack			\
 		minlen 2						\
 		pfoverlay_type_src_off 1				\
 		pfoverlay_type_size 1					\
 		overlay_proto_tlvs_table_key.name table.tlv.tcp.sack
-ipcmd parser create tlvnode name node.tlv.tcp.mss		\
+ipcmd parser create tlvnode name node.tlv.tcp.mss			\
 		minlen 4						\
 		metadatatable.name ml.tcp.tlv.mss
-ipcmd parser create tlvnode name node.tlv.tcp.ts		\
+ipcmd parser create tlvnode name node.tlv.tcp.ts			\
 		minlen 10						\
 		metadatatable.name ml.tcp.tlv.ts
 ipcmd parser create tlvtable name table.tlv.tcp
-ipcmd parser create tlvtable/table.tlv.tcp			\
-		addentry true	\
+ipcmd parser create tlvtable/table.tlv.tcp				\
+		addentry true						\
 		tlvtype 8						\
 		tlvnode.name node.tlv.tcp.ts
-ipcmd parser create tlvtable/table.tlv.tcp			\
-		addentry true	\
+ipcmd parser create tlvtable/table.tlv.tcp				\
+		addentry true						\
 		tlvtype 2						\
 		tlvnode.name node.tlv.tcp.mss
-ipcmd parser create tlvtable/table.tlv.tcp			\
-		addentry true	\
+ipcmd parser create tlvtable/table.tlv.tcp				\
+		addentry true						\
 		tlvtype 5						\
 		tlvnode.name node.tlv.tcp.sack
-ipcmd parser create node name node.tcp				\
+ipcmd parser create node name node.tcp					\
 		metadatatable.name mdl.tcp				\
 		minlen 20						\
 		hdrlenoff 12						\
@@ -352,18 +363,18 @@ Table's entry points to the previously created parse node identified by
 name "node.name node.ipv4". key 0x800 specifies the ether's protocol value
 for IPv4.
 ////
-ipcmd parser create table/table.ether			\
-		addentry true	\
+ipcmd parser create table/table.ether					\
+		addentry true						\
 		key 0x800						\
 		node.name node.ipv4
 
-ipcmd parser create table/table.ether			\
-		addentry true	\
+ipcmd parser create table/table.ether					\
+		addentry true						\
 		key 0x8100						\
 		node.name node.vlan
 
-ipcmd parser create table/table.ether			\
-		addentry true	\
+ipcmd parser create table/table.ether					\
+		addentry true						\
 		key 0x86dd						\
 		node.name node.ipv6
 
@@ -377,37 +388,37 @@ Table's entry points to the previously created parse node identified by
 name "node.name node.tcp". key 0x6 specifies the IPv4's protocol value
 for TCP.
 ////
-ipcmd parser create table/table.ip				\
-		addentry true	\
-		key 0x6						\
+ipcmd parser create table/table.ip					\
+		addentry true						\
+		key 0x6							\
 		node.name node.tcp
 
-ipcmd parser create table/table.ip				\
-		addentry true	\
+ipcmd parser create table/table.ip					\
+		addentry true						\
 		key 4							\
 		node.name node.ipv4
 
-ipcmd parser create table/table.ip				\
-		addentry true	\
-		key 47						\
+ipcmd parser create table/table.ip					\
+		addentry true						\
+		key 47							\
 		node.name node.gre
 echo "----------------------------------------------------------------------"
-ipcmd parser create metadata name md.num_nodes			\
+ipcmd parser create metadata name md.num_nodes				\
 		type numnodes						\
 		doff 0
-ipcmd parser create metadata name md.num_encaps			\
+ipcmd parser create metadata name md.num_encaps				\
 		type numencaps						\
 		doff 4
-ipcmd parser create metadata name md.return_code		\
+ipcmd parser create metadata name md.return_code			\
 		type return_code					\
 		doff 8
-ipcmd parser create metalist name mdl.final_status		\
+ipcmd parser create metalist name mdl.final_status			\
 		metadata.name md.num_nodes				\
 		metadata.name md.num_encaps				\
 		metadata.name md.return_code
-ipcmd parser create node name node.parser_exit_ok		\
+ipcmd parser create node name node.parser_exit_ok			\
 		metadatatable.name mdl.final_status
-ipcmd parser create node name node.parser_exit_fail		\
+ipcmd parser create node name node.parser_exit_fail			\
 		metadatatable.name mdl.final_status
 << ////
 creates a parser object identified by name "test_parser"
@@ -423,7 +434,7 @@ frame_size specifies the metadata buffer size that user passed. This must
 match with the user passed buffer and must have enough space.
 root_node.name specifies the name of the protocol root node of this parser.
 ////
-ipcmd parser create parser name test_parser			\
+ipcmd parser create parser name test_parser				\
 		maxnodes 12						\
 		maxencaps 3						\
 		maxframes 3						\

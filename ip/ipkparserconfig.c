@@ -1610,21 +1610,48 @@ static inline int node_post_handler(const void *namespace,
 	}
 
 	if (flagsset) {
+		K2IDX("flagsfieldoff", kidxstart);
+		K2IDX("flagsfieldaddvalue", kidxend);
+		for (i = kidxstart; i <= kidxend; i++) {
+			// any member of pfstart_fields_offset is set
+			if (!testbit(ns_keys_bvs, i)) {
+				conf->flag_fields_parse_node.proto_node.ops.
+					start_fields_offset_parameterized =
+					true;
+				break;
+			}
+		}
+
 		K2IDX("flagsfieldhdrlen", kidx);
 		if (testbit(ns_keys_bvs, kidx)) {
-			// key flagsfieldhdrlen is not set, so set to minlen
-			K2IDX("minlen", kidx);
-			if (testbit(ns_keys_bvs, kidx)) {
-				// but minlen is also not set
-				fprintf(stderr, "key `flagsfieldhdrlen` must"
-						" be set in case"
-						" key `minlen` is not set\n");
-				return EINVAL;
+			// key flagsfieldhdrlen is not set
+			if (!conf->flag_fields_parse_node.proto_node.
+					ops.start_fields_offset_parameterized) {
+				/* key flagsfieldhdrlen is not set
+				 * and no member of pfstart_fields_offset is
+				 * set. So set ops.hdr_length to minlen
+				 * If minlen is not provided, then EINVAL
+				 */
+				K2IDX("minlen", kidx);
+				if (testbit(ns_keys_bvs, kidx)) {
+					// but minlen is also not set
+					fprintf(stderr, "key `flagsfieldhdrlen`"
+							" must be set in case"
+							" key `minlen` is not"
+							" set\n");
+					return EINVAL;
+				}
+				conf->flag_fields_parse_node.proto_node.ops.
+					flag_fields_len = true;
+				conf->flag_fields_parse_node.proto_node.ops.
+					hdr_length = conf->plain_parse_node.
+					proto_node.min_len; 
 			}
-			conf->flag_fields_parse_node.proto_node.ops.hdr_length =
-				conf->plain_parse_node.proto_node.min_len; 
 		} else {
-			// if "flagsfieldhdrlen" is set
+			/* if "flagsfieldhdrlen" is set
+			 * Note: it overrides any config from
+			 * pfstart_fields_offset
+			 */
 			conf->flag_fields_parse_node.proto_node.ops.
 				flag_fields_len = true;
 		}
@@ -1636,18 +1663,6 @@ static inline int node_post_handler(const void *namespace,
 			if (!testbit(ns_keys_bvs, i)) {
 				conf->flag_fields_parse_node.proto_node.ops.
 					get_flags_parameterized = true;
-				break;
-			}
-		}
-
-		K2IDX("flagsfieldoff", kidxstart);
-		K2IDX("flagsfieldaddvalue", kidxend);
-		for (i = kidxstart; i <= kidxend; i++) {
-			// any member of pfstart_fields_offset is set
-			if (!testbit(ns_keys_bvs, i)) {
-				conf->flag_fields_parse_node.proto_node.ops.
-					start_fields_offset_parameterized =
-					true;
 				break;
 			}
 		}
