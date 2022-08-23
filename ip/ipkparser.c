@@ -21,7 +21,6 @@
 #include "ip_common.h"
 #include "kparser_common.h"
 
-
 static inline bool keymatches(const char *prefix, const char *string)
 {
 	if (!*prefix)
@@ -38,16 +37,6 @@ extern const struct kparser_global_namespaces *g_namespaces[];
 /* netlink socket */
 static struct rtnl_handle genl_rth = { .fd = -1 };
 static int genl_family = -1;
-
-enum {
-	op_create = 0,
-	op_read,
-	op_update,
-	op_delete,
-	op_lock,
-	op_unlock,
-	op_max
-};
 
 #define KPARSER_REQUEST(_req, _bufsiz, _cmd, _flags)			\
 	GENL_REQUEST(_req, _bufsiz, genl_family, 0,			\
@@ -123,6 +112,16 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 			else
 				print_hu(PRINT_ANY, key, "", 
 						*(__u16 *)(((void *) cmd_arg) +
+							w_offset));
+			break;
+		case KPARSER_ARG_VAL_S32:
+			if (print_id == KPARSER_PRINT_HEX) 
+				print_0xhex(PRINT_ANY, key, "",
+						*(int *)(((void *) cmd_arg) +
+							w_offset));
+			else
+				print_int(PRINT_ANY, key, "",
+						*(int *)(((void *) cmd_arg) +
 							w_offset));
 			break;
 		case KPARSER_ARG_VAL_U32:
@@ -571,13 +570,14 @@ do {									\
 	goto out;							\
 } while(0)
 
-static int __do_cli(const struct kparser_global_namespaces *namespace,
-		int op, int argc, int *argidx, const char **argv,
-		const char *hybrid_token)
+int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
+		const char *hybrid_token, bool preprocess_done,
+		bool undesired_key_check)
 {
 	size_t cmd_rsp_size = 0, old_cmd_rsp_size, w_offset, w_len, cmd_arg_len;
 	bool ret = true, value_err = false, ignore_min_max = false;
 	int ns_keys_bvs[KPARSER_CONFIG_MAX_KEYS], type, elem_type;
+	const struct kparser_global_namespaces *namespace;
 	const struct kparser_arg_key_val_token *curr_arg;
 	size_t *dst_array_size, elem_offset, elem_size;
 	int i, j, rc, op_attr_id, key_start_idx = 0;
@@ -593,6 +593,14 @@ static int __do_cli(const struct kparser_global_namespaces *namespace,
 	int other_mandatory_idx;
 	void *cmd_rsp = NULL;
 
+	if (nsid <= KPARSER_NS_INVALID || nsid >= KPARSER_NS_MAX)
+		return EINVAL;
+
+	namespace = g_namespaces[nsid];
+
+	if (!namespace)
+		return 0;
+
 	if (argidx && *argidx > 0)
 		key_start_idx = *argidx;
 
@@ -605,6 +613,10 @@ static int __do_cli(const struct kparser_global_namespaces *namespace,
 			return EINVAL;
 		}
 	}
+
+	if (!preprocess_done && namespace->custom_do_cli)
+		return namespace->custom_do_cli(nsid, op, argc,
+				argidx, argv, hybrid_token, tbn, tbid);
 
 	if (namespace->arg_tokens_count >= KPARSER_CONFIG_MAX_KEYS) {
 		fprintf(stderr, "object `%s`: key count %lu more than max %d\n",
@@ -751,6 +763,7 @@ static int __do_cli(const struct kparser_global_namespaces *namespace,
 
 		case KPARSER_ARG_VAL_U8:
 		case KPARSER_ARG_VAL_U16:
+		case KPARSER_ARG_VAL_S32:
 		case KPARSER_ARG_VAL_U32:
 		case KPARSER_ARG_VAL_U64:
 			ret = parse_cmd_line_key_val_ints(argc, argidx, argv,
@@ -998,6 +1011,9 @@ array_parse_start:
 		}
 	}
 
+	if (!undesired_key_check)
+		goto undesired_key_check_validation_done;
+
 	for (i = key_start_idx; i < argc; i += 2) {
 		// printf("%s\n", argv[i]);
 		for (j = 0; j < namespace->arg_tokens_count; j++) {
@@ -1020,6 +1036,8 @@ array_parse_start:
 			goto out;
 		}
 	}
+
+undesired_key_check_validation_done:
 
 	if (namespace->post_process_handler) {
 		rc = namespace->post_process_handler(namespace, op, argc,
@@ -1073,7 +1091,7 @@ out:
 	return rc;
 }
 
-static int do_cli(int op, int argc, int *argidx,
+static int __do_cli(int op, int argc, int *argidx,
 		const char **argv)
 {
 	const char *ns = NULL, *hybrid_token = NULL;
@@ -1113,9 +1131,8 @@ static int do_cli(int op, int argc, int *argidx,
 
 		if (keymatches(ns, g_namespaces[i]->name) == 0) {
 			(*argidx)++;
-			return __do_cli(g_namespaces[i],
-					op, argc, argidx, argv,
-					hybrid_token);
+			return do_cli(i, op, argc, argidx, argv,
+					hybrid_token, false, true);
 		}
 	}
 
@@ -1172,6 +1189,7 @@ static const char *arg_val_type_str[] =
 	[KPARSER_ARG_VAL_STR] = "string",
 	[KPARSER_ARG_VAL_U8] = "unsigned 8 bits",
 	[KPARSER_ARG_VAL_U16] = "unsigned 16 bits",
+	[KPARSER_ARG_VAL_S32] = "signed 32 bits",
 	[KPARSER_ARG_VAL_U32] = "unsigned 32 bits",
 	[KPARSER_ARG_VAL_U64] = "unsigned 64 bits",
 	[KPARSER_ARG_VAL_BOOL] = "boolean (true/false)",
@@ -1601,7 +1619,7 @@ int do_kparser(int argc, char **argv)
 		if (argc && (argidx <= (argc - 1)) && argv && argv[argidx] &&
 			(keymatches(argv[argidx], cli_ops[i].op_name) == 0)) {
 			argidx++;
-			return do_cli(cli_ops[i].op, argc, &argidx,
+			return __do_cli(cli_ops[i].op, argc, &argidx,
 				      (const char **) argv);
 		}
 	}

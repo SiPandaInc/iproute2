@@ -10,7 +10,9 @@ die()
 ipcmd() {
 # -j -p enables formatted json print in stdout
 	echo "running $1 $2 $3 $4 $5"
-	./ip/ip -j -p "$@" || die "command \`$1 $2 $3 $4 $5\` failed."
+# gdb --args ./ip/ip -j -p "$@" || die "command \`$1 $2 $3 $4 $5\` failed."
+		./ip/ip -j -p "$@" || die "command \`$1 $2 $3 $4 $5\` failed."
+#	./ip/ip -j -p "$@"
 }
 
 # define the counter used for VLAN
@@ -23,13 +25,12 @@ ipcmd parser create counter name cntr.vlan.1				\
 		arrayelementsize 2
 
 #define the vlan tci metadata extraction rule
-
 ipcmd parser create metadata name md.cntr.vlantci			\
 		soff 0							\
 		doff 30							\
 		length 2						\
 		counterid 1						\
-		isframe true						\
+		isframe true
 
 # define increment operation for counter id 1
 # note: id 1 corresponds to index 0 above
@@ -37,7 +38,7 @@ ipcmd parser create metadata name md.cntr.inc				\
 		type counter_mode					\
 		counterid 1						\
 		counterdata 1						\
-		counterop counter_op_incr				\
+		counterop counter_op_incr
 
 # define where to store the counter value in user metadata
 ipcmd parser create metadata name md.cntr.store				\
@@ -51,7 +52,7 @@ ipcmd parser create metadata name md.cntr.store				\
 ipcmd parser create metalist name mdl.vlan				\
 		metadata.name md.cntr.vlantci				\
 		metadata.name md.cntr.inc				\
-		metadata.name md.cntr.store				\
+		metadata.name md.cntr.store
 
 << ////
 NOTE:
@@ -168,40 +169,39 @@ ipcmd parser create metadata name md.gre.seqno				\
 ipcmd parser create metalist name ml.gre.seqno				\
 		metadata.name md.gre.seqno_offset			\
 		metadata.name md.gre.seqno
-ipcmd parser create flags name flag.gre.seqno				\
-		flag 0x1000						\
-		size 4
-ipcmd parser create flags name flag.gre.csum				\
-		flag 0x8000						\
-		size 4
-ipcmd parser create flags name flag.gre.key				\
-		flag 0x2000						\
-		size 4
-ipcmd parser create flags name flag.gre.ack				\
-		flag 0x0080						\
-		size 4
+
 ipcmd parser create flagfields name flagslist.gre
-# TODO: make CLI update to combine create flags inline to create flagfields table 
-# following ordering and indexes are important, must be according to the flags
+
+GRE_FLAG_CSUM=0x8000
+GRE_FLAG_KEY=0x2000
+GRE_FLAG_SEQNO=0x1000
+GRE_FLAG_ACK=0x0080
+
 ipcmd parser create flagfields/flagslist.gre				\
+		key 0							\
 		flag.name flag.gre.csum					\
-		addentry true
+		flag $GRE_FLAG_CSUM					\
+		size 4
+
 ipcmd parser create flagfields/flagslist.gre				\
+		key 1							\
 		flag.name flag.gre.key					\
-		addentry true
+		flag GRE_FLAG_KEY					\
+		size 4
+
 ipcmd parser create flagfields/flagslist.gre				\
+		key 2							\
 		flag.name flag.gre.seqno				\
-		addentry true
-ipcmd parser create flagfields/flagslist.gre				\
-		flag.name flag.gre.ack					\
-		addentry true
-ipcmd parser create flagsnode name flagsnode.gre			\
+		flag $GRE_FLAG_SEQNO					\
+		size 4							\
 		metadatatable.name ml.gre.seqno
-ipcmd parser create flagstable name flagstable.gre
-ipcmd parser create flagstable/flagstable.gre				\
-		addentry true						\
-		flagindex 2						\
-		flagsnode.name flagsnode.gre
+
+ipcmd parser create flagfields/flagslist.gre				\
+		key 3							\
+		flag.name flag.gre.ack					\
+		flag GRE_FLAG_ACK					\
+		size 4
+
 ipcmd parser create metadata name md.gre.flags				\
 		type hdrdata						\
 		soff 0							\
@@ -209,8 +209,10 @@ ipcmd parser create metadata name md.gre.flags				\
 		length 2						\
 		isframe true						\
 		isendianneeded true
+
 ipcmd parser create metalist name mdl.gre				\
-		metadata.name md.gre.flags				\
+		metadata.name md.gre.flags
+
 #ipcmd parser create table/table.ip				\
 #		key 94						\
 #		encap true						\
@@ -223,8 +225,10 @@ ipcmd parser create node name node.gre					\
 		minlen 4 						\
 		flagsoff 0						\
 		flagslen 2						\
-		flagsfieldstable.name flagslist.gre			\
-		flagsfieldsprototable.name flagstable.gre
+		flagstable.name flagslist.gre
+
+#		flagsfieldstable.name flagslist.gre			\
+#		flagsfieldsprototable.name flagstable.gre
 
 ipcmd parser create node name node.ipv4					\
 		metadatatable.name mdl.ipv4				\
@@ -316,7 +320,6 @@ ipcmd parser create tlvnode name node.tlv.tcp.sack10			\
 		metadatatable.name ml.tcp.tlv.sack.10
 ipcmd parser create tlvtable name table.tlv.tcp.sack
 ipcmd parser create tlvtable/table.tlv.tcp.sack				\
-		addentry true						\
 		tlvtype 10						\
 		tlvnode.name node.tlv.tcp.sack10
 ipcmd parser create tlvnode name node.tlv.tcp.sack			\
@@ -332,15 +335,12 @@ ipcmd parser create tlvnode name node.tlv.tcp.ts			\
 		metadatatable.name ml.tcp.tlv.ts
 ipcmd parser create tlvtable name table.tlv.tcp
 ipcmd parser create tlvtable/table.tlv.tcp				\
-		addentry true						\
 		tlvtype 8						\
 		tlvnode.name node.tlv.tcp.ts
 ipcmd parser create tlvtable/table.tlv.tcp				\
-		addentry true						\
 		tlvtype 2						\
 		tlvnode.name node.tlv.tcp.mss
 ipcmd parser create tlvtable/table.tlv.tcp				\
-		addentry true						\
 		tlvtype 5						\
 		tlvnode.name node.tlv.tcp.sack
 ipcmd parser create node name node.tcp					\
@@ -364,17 +364,14 @@ name "node.name node.ipv4". key 0x800 specifies the ether's protocol value
 for IPv4.
 ////
 ipcmd parser create table/table.ether					\
-		addentry true						\
 		key 0x800						\
 		node.name node.ipv4
 
 ipcmd parser create table/table.ether					\
-		addentry true						\
 		key 0x8100						\
 		node.name node.vlan
 
 ipcmd parser create table/table.ether					\
-		addentry true						\
 		key 0x86dd						\
 		node.name node.ipv6
 
@@ -389,17 +386,14 @@ name "node.name node.tcp". key 0x6 specifies the IPv4's protocol value
 for TCP.
 ////
 ipcmd parser create table/table.ip					\
-		addentry true						\
 		key 0x6							\
 		node.name node.tcp
 
 ipcmd parser create table/table.ip					\
-		addentry true						\
 		key 4							\
 		node.name node.ipv4
 
 ipcmd parser create table/table.ip					\
-		addentry true						\
 		key 47							\
 		node.name node.gre
 echo "----------------------------------------------------------------------"

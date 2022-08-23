@@ -17,6 +17,35 @@
 #include "utils.h"
 #include "kparser_common.h"
 
+static int check_key(int argc, const char **argv, const char *key)
+{
+	int i;
+
+	for (i = 0; i < argc; i += 2)
+		if (!strcmp(argv[i], key))
+			return i;
+
+	return -1;
+}
+
+#define KPARSER_ARG_S(bits, key, member, min, max, def, msg,		\
+		json_start, json_end, ...)				\
+	{								\
+		.type = KPARSER_ARG_VAL_S##bits,			\
+		.key_name = key,					\
+		.str_arg_len_max = KPARSER_MAX_STR_LEN_U##bits,		\
+		.min_value = min,					\
+		.def_value = def,					\
+		.max_value = max,					\
+		.w_offset = offsetof(struct kparser_conf_cmd, member),	\
+		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->	\
+				member),				\
+		.help_msg = msg,					\
+		.json_recursive_object_start_name = json_start,		\
+		.json_recursive_object_start_name = json_end,		\
+		.incompatible_keys = { __VA_ARGS__ },			\
+	}
+
 #define KPARSER_ARG_U(bits, key, member, min, max, def, msg,		\
 		json_start, json_end, ...)				\
 	{								\
@@ -339,8 +368,6 @@ static const struct kparser_arg_key_val_token cond_exprs_table_key_vals[] =
 			KPARSER_INVALID_ID,
 			"hybrid key id for the associated conditional"
 			" expression table"),
-	KPARSER_ARG_BOOL("addentry", table_conf.add_entry, false,
-			"add an element to a table", NULL, NULL),
 	KPARSER_ARG_HKEY("condexprs.name",
 			"condexprs.id", table_conf.elem_key,
 			"associated conditional expression entry's name or id",
@@ -374,10 +401,8 @@ static const struct kparser_arg_key_val_token cond_exprs_tables_key_vals[] =
 			KPARSER_INVALID_ID,
 			"hybrid key id for the associated table of"
 			" conditional expression table"),
-	KPARSER_ARG_BOOL("addentry", table_conf.add_entry, false,
-			"add an element to a table", NULL, NULL),
-	KPARSER_ARG_HKEY("condexprs.name",
-			"condexprs.id", table_conf.elem_key,
+	KPARSER_ARG_HKEY("condexprstbl.name",
+			"condexprstbl.id", table_conf.elem_key,
 			"associated table of conditional expression's"
 			" name or id",
 			NULL, NULL),
@@ -683,8 +708,8 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] =
 		.help_msg = "parse node type, default is `plain`, or FLAGs/TLVs"
 			" depending upon associated keys are configured",
 	},
-	KPARSER_ARG_U(32, "unknownret", PLAIN_NODE.unknown_ret,
-			0, 0xffffffff, 0,
+	KPARSER_ARG_S(32, "unknownret", PLAIN_NODE.unknown_ret,
+			0, 0xffffffff, -12,
 			"Code to return for a miss on the protocol table and"
 			" the wildcard node is not set", NULL, NULL),
 	KPARSER_ARG_HKEY("nxttable.name", "nxttable.id",
@@ -865,9 +890,9 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] =
 			0, 0xffffffff, 2, "Minimal length of a TLV option",
 			NULL, "config"),
 
-	KPARSER_ARG_U(32, "unknowntlvtyperet",
+	KPARSER_ARG_S(32, "unknowntlvtyperet",
 			TLVS_NODE.unknown_tlv_type_ret,
-			0, 0xffffffff, 0, "kParser error code to return on a"
+			0, 0xffffffff, -12, "kParser error code to return on a"
 			"TLV table lookup miss and tlv_wildcard_node is NULL",
 			NULL, NULL),
 	KPARSER_ARG_HKEY("tlvstable.name", "tlvstable.id",
@@ -995,13 +1020,18 @@ static const struct kparser_arg_key_val_token proto_table_key_vals[] =
 	KPARSER_ARG_U(32, "key", table_conf.optional_value1,
 			0, 0xffffffff, 0,
 			"<TODO>", NULL, NULL),
+	KPARSER_ARG_BOOL("encap", table_conf.optional_value2, false,
+			"Set if this protocol is starting of a new"
+			" encapsulation layer", NULL, NULL),
+	KPARSER_ARG_U(32, "encap", table_conf.optional_value2,
+			0, 1, 0,
+			"<TODO>", NULL, NULL),
+
 	KPARSER_ARG_H_K_N("table.name", table_conf.key.name,
 			KPARSER_DEF_NAME_PREFIX, "<TODO>"),
 	KPARSER_ARG_H_K_I("table.id", table_conf.key.id,
 			KPARSER_USER_ID_MIN, KPARSER_USER_ID_MAX,
 			KPARSER_INVALID_ID, "<TODO>"),
-	KPARSER_ARG_BOOL("addentry", table_conf.add_entry, false,
-			"add an element to a table", NULL, NULL),
 	KPARSER_ARG_HKEY("node.name", "node.id", table_conf.elem_key,
 			NULL, NULL,
 			"<TODO>", NULL, NULL),
@@ -1059,8 +1089,8 @@ static const struct kparser_arg_key_val_token tlv_parse_node_key_vals[] =
 			tlv_node_conf.node_proto.ops.cond_exprs_table,
 			"<TODO>", NULL, NULL),
 
-	KPARSER_ARG_U(32, "unknown_ret", tlv_node_conf.unknown_ret,
-			0, 0xffffffff, 0, 
+	KPARSER_ARG_S(32, "unknown_ret", tlv_node_conf.unknown_ret,
+			0, 0xffffffff, -12, 
 			"<TODO>", NULL, NULL),
 	KPARSER_ARG_HKEY("overlay_proto_tlvs_table_key.name",
 			"overlay_proto_tlvs_table_key.id",
@@ -1099,8 +1129,6 @@ static const struct kparser_arg_key_val_token tlv_proto_table_key_vals[] =
 	KPARSER_ARG_H_K_I("table.id", table_conf.key.id,
 			KPARSER_USER_ID_MIN, KPARSER_USER_ID_MAX,
 			KPARSER_INVALID_ID, "<TODO>"),
-	KPARSER_ARG_BOOL("addentry", table_conf.add_entry, false,
-			"add an element to a table", NULL, NULL),
 	KPARSER_ARG_HKEY("tlvnode.name", "tlvnode.id", table_conf.elem_key,
 			"<TODO>", NULL, NULL),
 };
@@ -1159,8 +1187,9 @@ static const struct kparser_arg_key_val_token flag_field_table_key_vals[] =
 			KPARSER_USER_ID_MIN, KPARSER_USER_ID_MAX,
 			KPARSER_INVALID_ID, "hybrid id for the associated"
 			" flag field table"),
-	KPARSER_ARG_BOOL("addentry", table_conf.add_entry, false,
-			"add an element to a table", NULL, NULL),
+	KPARSER_ARG_U(32, "key", table_conf.optional_value1,
+			0, 0xffffffff, 0,
+			"index as key of this flag field", NULL, NULL),
 	KPARSER_ARG_HKEY("flag.name", "flag.id",
 			table_conf.elem_key,
 			"associated flag entry's name or id", NULL, NULL),
@@ -1223,8 +1252,6 @@ flag_field_proto_table_key_vals[] =
 	KPARSER_ARG_U(32, "flagindex", table_conf.optional_value1,
 			0, 0xffffffff, 0,
 			"index of the flag/flag field", NULL, NULL),
-	KPARSER_ARG_BOOL("addentry", table_conf.add_entry, false,
-			"add an element to a table", NULL, NULL),
 	KPARSER_ARG_HKEY("flagsnode.name", "flagsnode.id",
 			table_conf.elem_key,
 			"<TODO>", NULL, NULL),
@@ -1305,7 +1332,7 @@ static const struct kparser_arg_key_val_token parser_lock_unlock_key_vals[] =
 };
 
 #define DEFINE_NAMESPACE_MEMBERS(id, namestr, token_name, desc,		\
-		phandler)						\
+		pre, post)						\
 	.name_space_id = id,						\
 	.name = namestr,						\
 	.alias = #id,							\
@@ -1317,12 +1344,8 @@ static const struct kparser_arg_key_val_token parser_lock_unlock_key_vals[] =
 	.delete_attr_id = KPARSER_ATTR_DELETE_##id,			\
 	.rsp_attr_id = KPARSER_ATTR_RSP_##id,				\
 	.description = desc,						\
-	.post_process_handler = phandler
-/*
-typedef int kparser_ns_arg_post_handler(int op, int argc, int *argidx,
-		const char **argv, const char *hybrid_token,
-		const int *ns_keys_bvs);
-*/
+	.custom_do_cli = pre,						\
+	.post_process_handler = post
 
 static inline int key_to_index(const char *key,
 		const struct kparser_global_namespaces *ns) 
@@ -1358,8 +1381,32 @@ kparser_arg_namespace_cond_exprs =
 	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_CONDEXPRS,
 			"condexprs",
 			cond_exprs_vals,
-			"conditional expressions object", NULL),
+			"conditional expressions object", NULL, NULL),
 };
+
+static inline int cond_table_post_handler(const void *namespace,
+		int op, int argc, int *argidx,
+		const char **argv, const char *hybrid_token,
+		const int *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
+{
+	struct kparser_conf_table *conf = &cmd_arg->table_conf;
+	const struct kparser_global_namespaces *ns = namespace;
+	int kidx;
+
+	conf->add_entry = false;
+
+	K2IDX("condexprs.name", kidx);
+	if (!testbit(ns_keys_bvs, kidx)) {
+		conf->add_entry = true;
+	}
+
+	K2IDX("condexprs.id", kidx);
+	if (!testbit(ns_keys_bvs, kidx)) {
+		conf->add_entry = true;
+	}
+
+	return 0;
+}
 
 static const struct kparser_global_namespaces
 kparser_arg_namespace_cond_exprs_table =
@@ -1367,8 +1414,33 @@ kparser_arg_namespace_cond_exprs_table =
 	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_CONDEXPRS_TABLE,
 			"condexprslist",
 			cond_exprs_table_key_vals,
-			"conditional expressions table object(s)", NULL),
+			"conditional expressions table object(s)",
+			NULL, cond_table_post_handler),
 };
+
+static inline int cond_tables_post_handler(const void *namespace,
+		int op, int argc, int *argidx,
+		const char **argv, const char *hybrid_token,
+		const int *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
+{
+	struct kparser_conf_table *conf = &cmd_arg->table_conf;
+	const struct kparser_global_namespaces *ns = namespace;
+	int kidx;
+
+	conf->add_entry = false;
+
+	K2IDX("condexprstbl.name", kidx);
+	if (!testbit(ns_keys_bvs, kidx)) {
+		conf->add_entry = true;
+	}
+
+	K2IDX("condexprstbl.id", kidx);
+	if (!testbit(ns_keys_bvs, kidx)) {
+		conf->add_entry = true;
+	}
+
+	return 0;
+}
 
 static const struct kparser_global_namespaces
 kparser_arg_namespace_cond_exprs_tables =
@@ -1377,7 +1449,7 @@ kparser_arg_namespace_cond_exprs_tables =
 			"condexprstable",
 			cond_exprs_tables_key_vals,
 			"table of conditional expressions table object(s)",
-			NULL),
+			NULL, cond_tables_post_handler),
 };
 
 static inline int counter_post_handler(const void *namespace,
@@ -1397,20 +1469,20 @@ kparser_arg_namespace_counter =
 	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_COUNTER,
 			"counter",
 			counter_key_vals,
-			"counter object", counter_post_handler),
+			"counter object", NULL, counter_post_handler),
 };
 
 static const struct kparser_global_namespaces kparser_arg_namespace_metadata =
 {
 	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_METADATA, "metadata", md_key_vals,
-			"metadata object", NULL),
+			"metadata object", NULL, NULL),
 };
 
 static const struct kparser_global_namespaces kparser_arg_namespace_metalist =
 {
 	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_METALIST,
 			"metalist", mdl_key_vals,
-			"list of metadata object(s)", NULL),
+			"list of metadata object(s)", NULL, NULL),
 };
 
 static inline int count_consecutive_bits(unsigned int *mem, size_t len,
@@ -1426,6 +1498,52 @@ static inline int count_consecutive_bits(unsigned int *mem, size_t len,
 			*shiftneeded = true;
 	}
 	return cnt;
+}
+
+static inline int node_do_cli(int nsid,
+		int op, int argc, int *argidx,
+		const char **argv, const char *hybrid_token,
+		const char *tbn, __u16 tbid)
+{
+	const char *newargv[KPARSER_CONFIG_MAX_KEYS] = {};
+	char autoflagname[KPARSER_MAX_NAME];
+	int currargidx, i, rc, j;
+
+	currargidx = check_key(argc, argv, "flagstable.name");
+	if ((currargidx == -1) || (op != op_create))
+		return do_cli(nsid, op, argc, argidx, argv,
+				hybrid_token, true, true);
+
+	for (i = 0; i < currargidx; i++)
+		newargv[i] = strdup(argv[i]);
+	newargv[i++] = strdup("flagsfieldstable.name");
+	newargv[i] = strdup(argv[i]);
+	snprintf(autoflagname, sizeof(autoflagname), "flagstable.%s",
+			argv[i++]);
+	newargv[i++] = strdup("flagsfieldsprototable.name");
+	newargv[i++] = strdup(autoflagname);
+	for (j = currargidx+2; j < argc; j++)
+		newargv[i++] = strdup(argv[j]);
+
+#if 0
+	printf("\n[");
+	for (j = 0; j < i; j++) {
+		printf("%s ", newargv[j]);	
+	}
+	printf("]\n");
+#endif
+
+	rc = do_cli(nsid, op, i, argidx,
+			(const char **) &newargv, hybrid_token, true, true);
+	if (rc != 0) {
+		fprintf(stderr, "do_cli() nsid:%d rc:%d\n", nsid, rc);
+	}
+
+	for (i = 0; i < (sizeof (newargv) / sizeof (newargv[0])); i++)
+		if (newargv[i])
+			free((void *) newargv[i]);
+
+	return rc;
 }
 
 static inline int node_post_handler(const void *namespace,
@@ -1676,15 +1794,41 @@ kparser_arg_namespace_parse_node =
 {
 	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_NODE_PARSE, "node",
 			parse_node_key_vals,
-			"plain parse node object", node_post_handler),
+			"plain parse node object",
+			node_do_cli, node_post_handler),
 };
+
+static inline int proto_table_post_handler(const void *namespace,
+		int op, int argc, int *argidx,
+		const char **argv, const char *hybrid_token,
+		const int *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
+{
+	struct kparser_conf_table *conf = &cmd_arg->table_conf;
+	const struct kparser_global_namespaces *ns = namespace;
+	int kidx;
+
+	conf->add_entry = false;
+
+	K2IDX("node.name", kidx);
+	if (!testbit(ns_keys_bvs, kidx)) {
+		conf->add_entry = true;
+	}
+
+	K2IDX("node.id", kidx);
+	if (!testbit(ns_keys_bvs, kidx)) {
+		conf->add_entry = true;
+	}
+
+	return 0;
+}
 
 static const struct kparser_global_namespaces
 kparser_arg_namespace_proto_table =
 {
 	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_PROTO_TABLE, "table",
 			proto_table_key_vals,
-			"table of parse node object(s)", NULL),
+			"table of parse node object(s)",
+			NULL, proto_table_post_handler),
 };
 
 static const struct kparser_global_namespaces
@@ -1692,15 +1836,41 @@ kparser_arg_namespace_tlv_parse_node =
 {
 	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_TLV_NODE_PARSE, "tlvnode",
 			tlv_parse_node_key_vals,
-			"tlv (type-length-value) parse node object", NULL),
+			"tlv (type-length-value) parse node object",
+			NULL, NULL),
 };
+
+static inline int tlv_table_post_handler(const void *namespace,
+		int op, int argc, int *argidx,
+		const char **argv, const char *hybrid_token,
+		const int *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
+{
+	struct kparser_conf_table *conf = &cmd_arg->table_conf;
+	const struct kparser_global_namespaces *ns = namespace;
+	int kidx;
+
+	conf->add_entry = false;
+
+	K2IDX("tlvnode.name", kidx);
+	if (!testbit(ns_keys_bvs, kidx)) {
+		conf->add_entry = true;
+	}
+
+	K2IDX("tlvnode.id", kidx);
+	if (!testbit(ns_keys_bvs, kidx)) {
+		conf->add_entry = true;
+	}
+
+	return 0;
+}
 
 static const struct kparser_global_namespaces
 kparser_arg_namespace_tlv_proto_table =
 {
 	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_TLV_PROTO_TABLE, "tlvtable",
 			tlv_proto_table_key_vals,
-			"table of tlv parse node object(s)", NULL),
+			"table of tlv parse node object(s)",
+			NULL, tlv_table_post_handler),
 };
 
 static inline int flag_post_handler(const void *namespace,
@@ -1720,8 +1890,32 @@ kparser_arg_namespace_flag_field =
 {
 	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_FLAG_FIELD, "flags",
 			flag_field_key_vals,
-			"flag object", flag_post_handler),
+			"flag object", NULL, flag_post_handler),
 };
+
+static inline int flagfields_do_cli(int nsid,
+		int op, int argc, int *argidx,
+		const char **argv, const char *hybrid_token,
+		const char *tbn, __u16 tbid);
+
+static inline int flagfields_post_handler(const void *namespace,
+		int op, int argc, int *argidx,
+		const char **argv, const char *hybrid_token,
+		const int *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
+{
+	struct kparser_conf_table *conf = &cmd_arg->table_conf;
+	const struct kparser_global_namespaces *ns = namespace;
+	int kidx;
+
+	conf->add_entry = false;
+
+	K2IDX("key", kidx);
+	if (!testbit(ns_keys_bvs, kidx)) {
+		conf->add_entry = true;
+	}
+
+	return 0;
+}
 
 static const struct kparser_global_namespaces
 kparser_arg_namespace_flag_field_table =
@@ -1729,7 +1923,8 @@ kparser_arg_namespace_flag_field_table =
 	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_FLAG_FIELD_TABLE,
 			"flagfields",
 			flag_field_table_key_vals,
-			"table of flag object(s)", NULL),
+			"table of flag object(s)",
+			flagfields_do_cli, flagfields_post_handler),
 };
 
 static const struct kparser_global_namespaces
@@ -1738,8 +1933,33 @@ kparser_arg_namespace_flag_field_node_parse =
 	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_FLAG_FIELD_NODE_PARSE,
 			"flagsnode",
 			flag_field_node_parse_key_vals,
-			"flag field parse node object", NULL),
+			"flag field parse node object", NULL, NULL),
 };
+
+static inline int flags_proto_table_post_handler(const void *namespace,
+		int op, int argc, int *argidx,
+		const char **argv, const char *hybrid_token,
+		const int *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
+{
+	struct kparser_conf_table *conf = &cmd_arg->table_conf;
+	const struct kparser_global_namespaces *ns = namespace;
+	int kidx;
+
+	conf->add_entry = false;
+
+	K2IDX("flagsnode.name", kidx);
+	if (!testbit(ns_keys_bvs, kidx)) {
+		conf->add_entry = true;
+	}
+
+	K2IDX("flagsnode.id", kidx);
+	if (!testbit(ns_keys_bvs, kidx)) {
+		conf->add_entry = true;
+	}
+
+	return 0;
+}
+
 
 static const struct kparser_global_namespaces
 kparser_arg_namespace_flag_field_proto_table =
@@ -1747,13 +1967,14 @@ kparser_arg_namespace_flag_field_proto_table =
 	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_FLAG_FIELD_PROTO_TABLE,
 			"flagstable",
 			flag_field_proto_table_key_vals,
-			"table of flag field parse node object(s)", NULL),
+			"table of flag field parse node object(s)",
+			NULL, flags_proto_table_post_handler),
 };
 
 static const struct kparser_global_namespaces kparser_arg_namespace_parser =
 {
 	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_PARSER, "parser", parser_key_vals,
-			"parser objects", NULL),
+			"parser objects", NULL, NULL),
 };
 
 static const struct kparser_global_namespaces
@@ -1761,7 +1982,7 @@ kparser_arg_namespace_parser_lock_unlock =
 {
 	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_OP_PARSER_LOCK_UNLOCK,
 			"parserlockunlock", parser_lock_unlock_key_vals,
-			"lock/unlock a parser object using key", NULL),
+			"lock/unlock a parser object using key", NULL, NULL),
 };
 
 const struct kparser_global_namespaces *g_namespaces[] =
@@ -1801,3 +2022,242 @@ const struct kparser_global_namespaces *g_namespaces[] =
 
 	[KPARSER_NS_MAX] = NULL,
 };
+
+static inline int flagfields_do_cli(int nsid,
+		int op, int argc, int *argidx,
+		const char **argv, const char *hybrid_token,
+		const char *tbn, __u16 tbid)
+{
+	const char *flagname = NULL, *flagid = NULL, *flagsnodename = NULL;
+	const char *newargv[KPARSER_CONFIG_MAX_KEYS] = {}, *newhybrid_token;
+	char autoflagname[KPARSER_MAX_NAME];
+	int newargc, currargidx, i, rc;
+	bool compactcmd = false;
+
+	/* check tbn/tbid to determine table create/add entry */
+	if (((strlen(tbn) == 0) && (tbid == KPARSER_INVALID_ID)) ||
+			(op != op_create))
+		return do_cli(nsid, op, argc, argidx, argv,
+				hybrid_token, true, true);
+
+	currargidx = check_key(argc, argv, "key");
+	if (currargidx == -1) {
+		fprintf(stderr, "Mandatory key `key` is missing\n");
+		return EINVAL;
+	}
+
+	/* add entry,check key `flags.flag` to determine if this is compact cmd
+	 * and need inline expansion
+	 */
+	currargidx = check_key(argc, argv, "flag");
+	compactcmd = currargidx != -1;
+	if (!compactcmd)
+		return do_cli(nsid, op, argc, argidx, argv,
+				hybrid_token, true, true);
+
+	/* Now expect all the params needed to
+	 * 	1. create a flag
+	 *	   e.g. create flags name flag.gre.seqno flag size 4
+	 *	   check for flag.name or flag.id or both. If they don't exist,
+	 * 	   autogen name by prepending "flags." to flagfields name.
+	 */
+	newargv[0] = strdup(argv[0]);
+	newargv[1] = strdup(g_namespaces[KPARSER_NS_FLAG_FIELD]->name);
+	for (i = 2; i < argc; i++)
+		newargv[i+2] = strdup(argv[i]);
+	newargc = argc + 2;	
+
+	currargidx = check_key(argc, argv, "flag.name");
+	if (currargidx != -1)
+		flagname = argv[currargidx+1];
+	else {
+		currargidx = check_key(argc, argv, "flag.id");
+		if (currargidx != -1)
+			flagid = argv[currargidx+1];
+		else
+			snprintf(autoflagname, sizeof(autoflagname),
+					"flags.%s", tbn);
+	}
+
+	if (flagname) {
+		newargv[2] = strdup("name");
+		newargv[3] = strdup(flagname);
+	} else if (flagid) {
+		newargv[2] = strdup("id");
+		newargv[3] = strdup(flagid);
+	} else {
+		newargv[2] = strdup("name");
+		newargv[3] = strdup(autoflagname);
+	}
+
+#if 0
+	printf("\n[");
+	for (i = 0; i < newargc; i++)
+		printf("%s ", newargv[i]);	
+	printf("]\n");
+#endif
+
+	rc = do_cli(KPARSER_NS_FLAG_FIELD, op, newargc, argidx,
+			(const char **) &newargv, hybrid_token, true, false);
+	if (rc != 0) {
+		fprintf(stderr, "do_cli() NS_FLAG_FIELD rc:%d\n", rc);
+		goto done;
+	}
+
+	for (i = 0; i < newargc; i++) {
+		free((void *) newargv[i]);
+		newargv[i] = NULL;
+	}
+
+	/* Now expect all the params needed to
+	 * 	2. create a flagsnode if metadatatable.name/metadatatable.id
+		   or both/flagsnode.name/flagsnode.id is present.
+	 *	   If flagsnode.name/flagsnode.id not present, autogen the name.
+	 * 	   by prepending "flagsnode." to flagfields name. 
+	 *	   e.g. create flagsnode name flagsnode.gre metadatatable.name
+	 *		ml.gre.seqno
+	 *	3. if above case is true, create a flagstable with that node
+	 * 	   e.g. create flagstable name flagstable.gre
+	 * 	  	create flagstable/flagstable.gre
+	 * 		flagindex 2 flagsnode.name flagsnode.gre
+	 * 		NOTE: flagindex is same as key
+	 */
+	flagname = NULL;
+	flagid = NULL;
+	currargidx = check_key(argc, argv, "metadatatable.name");
+	if (currargidx != -1)
+		flagname = argv[currargidx+1];
+	else {
+		currargidx = check_key(argc, argv, "metadatatable.id");
+		if (currargidx != -1)
+			flagid = argv[currargidx+1];
+	}
+	currargidx = check_key(argc, argv, "flagsnode.name");
+	if ((currargidx == -1) && !flagname && !flagid)
+		goto done; // no flagsnode and flagstable
+
+	if (currargidx != -1)
+		flagname = argv[currargidx+1];
+	else {
+		flagname = NULL;
+		flagid = NULL;
+		snprintf(autoflagname, sizeof(autoflagname),
+				"flagsnode.%s", tbn);
+	}
+
+	newargv[0] = strdup(argv[0]);
+	newargv[1] = strdup(g_namespaces[
+			KPARSER_NS_FLAG_FIELD_NODE_PARSE]->name);
+	for (i = 2; i < argc; i++)
+		newargv[i+2] = strdup(argv[i]);
+	newargc = argc + 2;	
+
+	if (flagname) {
+		newargv[2] = strdup("name");
+		newargv[3] = strdup(flagname);
+	} else if (flagid) {
+		newargv[2] = strdup("id");
+		newargv[3] = strdup(flagid);
+	} else {
+		newargv[2] = strdup("name");
+		newargv[3] = strdup(autoflagname);
+	}
+
+	flagsnodename = strdup(newargv[3]);
+
+#if 0
+	printf("\n[");
+	for (i = 0; i < newargc; i++)
+		printf("%s ", newargv[i]);	
+	printf("]\n");
+#endif
+
+	rc = do_cli(KPARSER_NS_FLAG_FIELD_NODE_PARSE, op, newargc, argidx,
+			(const char **) &newargv, hybrid_token, true, false);
+	if (rc != 0) {
+		fprintf(stderr, "do_cli() NS_FLAG_FIELD rc:%d\n", rc);
+		goto done;
+	}
+
+	for (i = 0; i < newargc; i++) {
+		free((void *) newargv[i]);
+		newargv[i] = NULL;
+	}
+
+	// create the flagstable
+
+	flagname = NULL;
+	flagid = NULL;
+	currargidx = check_key(argc, argv, "flagstable.name");
+	if (currargidx != -1)
+		flagname = argv[currargidx+1];
+	else
+		snprintf(autoflagname, sizeof(autoflagname),
+				"flagstable.%s", tbn);
+
+	newargv[0] = strdup(argv[0]);
+	newargv[1] = strdup(g_namespaces[
+			KPARSER_NS_FLAG_FIELD_PROTO_TABLE]->name);
+	newargv[2] = strdup("name");
+
+	if (flagname)
+		newargv[3] = strdup(flagname);
+	else
+		newargv[3] = strdup(autoflagname);
+
+	newargc = 4;
+
+#if 0
+	printf("\n[");
+	for (i = 0; i < newargc; i++)
+		printf("%s ", newargv[i]);	
+	printf("]\n");
+#endif
+
+	rc = do_cli(KPARSER_NS_FLAG_FIELD_PROTO_TABLE, op, newargc, argidx,
+			(const char **) &newargv, NULL, true, false);
+	if (rc != 0) {
+		fprintf(stderr, "do_cli() NS_FLAG_FIELD rc:%d\n", rc);
+		goto done;
+	}
+
+	// create the flagstable entry with flagsnodename and key
+
+	snprintf(autoflagname, sizeof(autoflagname), "flagstable/%s",
+		newargv[3]);
+	free((void *) newargv[3]);
+	free((void *) newargv[2]);
+	newargv[2] = strdup(autoflagname);
+	newargv[3] = strdup("flagindex");
+	currargidx = check_key(argc, argv, "key");
+	newargv[4] = strdup(argv[currargidx+1]);
+	newargv[5] = strdup("flagsnode.name");
+	newargv[6] = strdup(flagsnodename);
+
+	newargc = 7;
+	newhybrid_token = newargv[2];
+
+#if 0
+	printf("\n[");
+	for (i = 0; i < newargc; i++)
+		printf("%s ", newargv[i]);	
+	printf("]\n");
+	printf("newhybrid_token: %s\n", newhybrid_token);
+#endif
+
+	rc = do_cli(KPARSER_NS_FLAG_FIELD_PROTO_TABLE, op, newargc, argidx,
+			(const char **) &newargv, newhybrid_token, true, false);
+	if (rc != 0) {
+		fprintf(stderr, "do_cli() NS_FLAG_FIELD rc:%d\n", rc);
+		goto done;
+	}
+
+done:
+	for (i = 0; i < (sizeof (newargv) / sizeof (newargv[0])); i++)
+		if (newargv[i])
+			free((void *) newargv[i]);
+	if (flagsnodename)
+		free((void *) flagsnodename);
+
+	return do_cli(nsid, op, argc, argidx, argv, hybrid_token, true, false);
+}

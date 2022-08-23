@@ -30,6 +30,7 @@ enum kparser_arg_val_type {
 	KPARSER_ARG_VAL_ARRAY,
 	KPARSER_ARG_VAL_HYB_KEY_NAME,
 	KPARSER_ARG_VAL_HYB_KEY_ID,
+	KPARSER_ARG_VAL_S32,
 	KPARSER_ARG_VAL_INVALID
 };
 
@@ -42,6 +43,25 @@ enum kparser_print_id {
 	KPARSER_PRINT_INT,
 	KPARSER_PRINT_HEX,
 };
+
+enum {
+	op_create = 0,
+	op_read,
+	op_update,
+	op_delete,
+	op_lock,
+	op_unlock,
+	op_max
+};
+
+int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
+		const char *hybrid_token, bool preprocess_done,
+		bool undesired_key_check);
+
+typedef int kparser_ns_arg_pre_handler(
+		int nsid, int op, int argc, int *argidx,
+		const char **argv, const char *hybrid_token,
+		const char *tbn, __u16 tbid);
 
 typedef int kparser_ns_arg_post_handler(
 		const void *ns,
@@ -61,6 +81,7 @@ struct kparser_global_namespaces {
 	int read_attr_id;
 	int delete_attr_id;
 	int rsp_attr_id;
+	kparser_ns_arg_pre_handler  *custom_do_cli;
 	kparser_ns_arg_post_handler *post_process_handler;
 };
 
