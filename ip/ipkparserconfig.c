@@ -57,7 +57,7 @@ static inline int count_consecutive_bits(unsigned int *mem, size_t len,
 				member),				\
 		.help_msg = msg,					\
 		.json_recursive_object_start_name = json_start,		\
-		.json_recursive_object_start_name = json_end,		\
+		.json_recursive_object_end_name = json_end,		\
 		.incompatible_keys = { __VA_ARGS__ },			\
 	}
 
@@ -75,7 +75,7 @@ static inline int count_consecutive_bits(unsigned int *mem, size_t len,
 				member),				\
 		.help_msg = msg,					\
 		.json_recursive_object_start_name = json_start,		\
-		.json_recursive_object_start_name = json_end,		\
+		.json_recursive_object_end_name = json_end,		\
 		.incompatible_keys = { __VA_ARGS__ },			\
 	}
 
@@ -94,7 +94,7 @@ static inline int count_consecutive_bits(unsigned int *mem, size_t len,
 				member),				\
 		.help_msg = msg,					\
 		.json_recursive_object_start_name = json_start,		\
-		.json_recursive_object_start_name = json_end,		\
+		.json_recursive_object_end_name = json_end,		\
 		.incompatible_keys = { __VA_ARGS__ },			\
 	}
 
@@ -110,7 +110,7 @@ static inline int count_consecutive_bits(unsigned int *mem, size_t len,
 				member.name),				\
 		.help_msg = "object's name",				\
 		.json_recursive_object_start_name = json_start,		\
-		.json_recursive_object_start_name = json_end,		\
+		.json_recursive_object_end_name = json_end,		\
 		.incompatible_keys = { __VA_ARGS__ },			\
 	}
 
@@ -126,9 +126,25 @@ static inline int count_consecutive_bits(unsigned int *mem, size_t len,
 				member.id),				\
 		.help_msg = "object's id",				\
 		.json_recursive_object_start_name = json_start,		\
-		.json_recursive_object_start_name = json_end,		\
+		.json_recursive_object_end_name = json_end,		\
 		.incompatible_keys = { __VA_ARGS__ },			\
 	}
+
+#define KPARSER_ARG_BOOL(key_name_arg, member, def_value, msg,		\
+		json_start, json_end)					\
+{									\
+	.type = KPARSER_ARG_VAL_SET,					\
+	.key_name = key_name_arg,					\
+	.value_set_len = sizeof(bool_types) / sizeof(bool_types[0]),	\
+	.value_set = bool_types,					\
+	.str_arg_len_max = KPARSER_SET_VAL_LEN_MAX,			\
+	.def_value_enum = def_value,					\
+	.w_offset = offsetof(struct kparser_conf_cmd, member),		\
+	.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->member),	\
+	.help_msg = msg,						\
+	.json_recursive_object_start_name = json_start,			\
+	.json_recursive_object_end_name = json_end,			\
+}
 
 #define KPARSER_ARG_HKEY(keyname, idname, member, msg,			\
 		json_start, json_end, ...)				\
@@ -175,22 +191,6 @@ static const struct kparser_arg_set bool_types[] =
 		.set_value_enum = false,
 	},
 };
-
-#define KPARSER_ARG_BOOL(key_name_arg, member, def_value, msg,		\
-		json_start, json_end)					\
-{									\
-	.type = KPARSER_ARG_VAL_SET,					\
-	.key_name = key_name_arg,					\
-	.value_set_len = sizeof(bool_types) / sizeof(bool_types[0]),	\
-	.value_set = bool_types,					\
-	.str_arg_len_max = KPARSER_SET_VAL_LEN_MAX,			\
-	.def_value_enum = def_value,					\
-	.w_offset = offsetof(struct kparser_conf_cmd, member),		\
-	.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->member),	\
-	.help_msg = msg,						\
-	.json_recursive_object_start_name = json_start,			\
-	.json_recursive_object_start_name = json_end,			\
-}
 
 static const struct kparser_arg_key_val_token hkey_name = {
 		.type = KPARSER_ARG_VAL_STR,
@@ -1411,6 +1411,11 @@ static inline int cond_exprs_post_handler(const void *namespace,
 				conf->config.length, &rightshiftneeded);
 		if (rightshiftneeded && cnt)
 			conf->config.right_shift = cnt;
+		// convert mask to host byte order if needed
+		if (conf->config.mask > 0xff && conf->config.mask <= 0xffff)
+			conf->config.mask = ntohs(conf->config.mask);
+		else if (conf->config.mask > 0xffff)
+			conf->config.mask = ntohl(conf->config.mask);
 	}
 
 	return 0;

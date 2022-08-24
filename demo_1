@@ -9,11 +9,48 @@ die()
 
 ipcmd() {
 # -j -p enables formatted json print in stdout
-	echo "running $1 $2 $3 $4 $5"
-# gdb --args ./ip/ip -j -p "$@" || die "command \`$1 $2 $3 $4 $5\` failed."
-		./ip/ip -j -p "$@" || die "command \`$1 $2 $3 $4 $5\` failed."
-#	./ip/ip -j -p "$@"
+	echo "executing \`$@\`" | fold -w 80
+	./ip/ip -j -p "$@" || die "command \`$@\` failed."
+	echo "---------------------------------------------------------------"
 }
+ipcmd parser create condexprs name cond.check_ip_is_not_fragment	\
+		type CONDEXPR_TYPE_EQUAL				\
+		srcoff 6						\
+		len 2							\
+		value 0							\
+		mask 0x3fff
+
+ipcmd parser create condexprs name cond.check_fragment_offset_zero	\
+		type CONDEXPR_TYPE_EQUAL				\
+		srcoff 6						\
+		len 2							\
+		value 0							\
+		mask 0x1fff
+
+ipcmd parser create condexprs name cond.ipv4.vercheck			\
+		type CONDEXPR_TYPE_EQUAL				\
+		srcoff 0						\
+		len 1							\
+		mask 0xf0						\
+		value 4
+
+ipcmd parser create condexprslist name condlist.ipv4			\
+		type CONDEXPR_TYPE_AND					\
+		defaultfail STOP_FAIL_CMP
+
+ipcmd parser create condexprslist/condlist.ipv4				\
+		condexprs.name cond.ipv4.vercheck
+
+ipcmd parser create condexprslist/condlist.ipv4				\
+		condexprs.name cond.check_fragment_offset_zero
+
+ipcmd parser create condexprslist/condlist.ipv4				\
+		condexprs.name cond.check_ip_is_not_fragment
+
+ipcmd parser create condexprstable name condtable.ipv4
+
+ipcmd parser create condexprstable/condtable.ipv4			\
+		condexprslist.name condlist.ipv4
 
 # define the counter used for VLAN
 # vlan metadata (tci) size is 2, and max count is also 2
@@ -54,18 +91,17 @@ ipcmd parser create metalist name mdl.vlan				\
 		metadata.name md.cntr.inc				\
 		metadata.name md.cntr.store
 
+ipcmd parser create table name table.others
 << ////
 NOTE:
 creates an empty protocol table object whose id is 2 and name is table.ip
 ////
 ipcmd parser create table name table.ip
-echo "----------------------------------------------------------------------"
 << ////
 NOTE:
 creates an empty protocol table object whose id is 1 and name is table.ether
 ////
 ipcmd parser create table name table.ether
-echo "----------------------------------------------------------------------"
 << ////
 NOTE:
 creates a metadata object identified by name "md.fragment_bit_offset"
@@ -83,31 +119,26 @@ ipcmd parser create metadata name md.fragment_bit_offset		\
 		doff 0							\
 		addoff 53						\
 		isframe true
-echo "----------------------------------------------------------------------"
 ipcmd parser create metadata name md.src_address_offset			\
 		type offset						\
 		addoff 12						\
 		doff 2							\
 		isframe true
-echo "----------------------------------------------------------------------"
 ipcmd parser create metadata name md.dst_address_offset			\
 		type offset						\
 		addoff 16						\
 		doff 4							\
 		isframe true
-echo "----------------------------------------------------------------------"
 ipcmd parser create metadata name md.tcp.src_port			\
 		type offset						\
 		addoff 0						\
 		doff 6							\
 		isframe true
-echo "----------------------------------------------------------------------"
 ipcmd parser create metadata name md.tcp.dst_port			\
 		type offset						\
 		addoff 2						\
 		doff 8							\
 		isframe true
-echo "----------------------------------------------------------------------"
 << ////
 NOTE:
 creates a metalist object identified by name "mdl.tcp"
@@ -117,12 +148,10 @@ Note: metadata.id can also be used here instead, but not both.
 ipcmd parser create metalist name mdl.tcp				\
 		metadata.name md.tcp.src_port				\
 		metadata.name md.tcp.dst_port
-echo "----------------------------------------------------------------------"
 ipcmd parser create metalist name mdl.ipv4				\
 		metadata.name md.dst_address_offset			\
 		metadata.name md.src_address_offset 			\
 		metadata.name md.fragment_bit_offset
-echo "----------------------------------------------------------------------"
 << ////
 NOTE:
 creates a parse_node object identified by name "node.ether"
@@ -140,7 +169,6 @@ ipcmd parser create node name node.ether				\
 		minlen 14						\
 		nxtoffset 12						\
 		nxtlength 2
-echo "----------------------------------------------------------------------"
 << ////
 NOTE:
 creates a parse_node object identified by name "node.ipv4"
@@ -213,19 +241,28 @@ ipcmd parser create metadata name md.gre.flags				\
 ipcmd parser create metalist name mdl.gre				\
 		metadata.name md.gre.flags
 
-#ipcmd parser create table/table.ip				\
-#		key 94						\
+#ipcmd parser create table/table.ip					\
+#		key 94							\
 #		encap true						\
-#		node.name node.ipv4					\
-# change encap true to nxtencap for nodes
-# rename prototable.name to nxttable
+#		node.name node.ipv4
+
 ipcmd parser create node name node.gre					\
 		metadatatable.name mdl.gre				\
 		nxtencap true						\
 		minlen 4 						\
+		nxtoffset 2						\
+		nxttable.name table.others				\
+		nxtlength 2						\
 		flagsoff 0						\
 		flagslen 2						\
 		flagstable.name flagslist.gre
+
+ipcmd parser create node name node.p2p					\
+		minlen 4 						\
+		nxtoffset 2						\
+		nxtlength 2						\
+		nxttable.name table.others
+
 
 #		flagsfieldstable.name flagslist.gre			\
 #		flagsfieldsprototable.name flagstable.gre
@@ -239,7 +276,9 @@ ipcmd parser create node name node.ipv4					\
 		hdrlenmultiplier 4					\
 		nxtoffset 9						\
 		nxtlength 1						\
-		nxttable.name table.ip
+		nxttable.name table.ip					\
+		condexprstable.name condtable.ipv4
+
 ipcmd parser create node name node.ipv6					\
 		minlen 40 						\
 		nxtoffset 6						\
@@ -251,7 +290,6 @@ ipcmd parser create node name node.vlan					\
 		nxtoffset 2						\
 		nxtlength 2						\
 		nxttable.name table.ether
-echo "----------------------------------------------------------------------"
 << ////
 NOTE:
 creates a parse_node object identified by name "node.tcp"
@@ -353,7 +391,6 @@ ipcmd parser create node name node.tcp					\
 		tlvspad1 1						\
 		tlvseol 0						\
 		tlvstable.name table.tlv.tcp
-echo "----------------------------------------------------------------------"
 << ////
 NOTE:
 creates an entry to the previously created empty protocol table object whose id
@@ -375,7 +412,6 @@ ipcmd parser create table/table.ether					\
 		key 0x86dd						\
 		node.name node.ipv6
 
-echo "----------------------------------------------------------------------"
 << ////
 NOTE:
 creates an entry to the previously created empty protocol table object whose id
@@ -385,18 +421,29 @@ Table's entry points to the previously created parse node identified by
 name "node.name node.tcp". key 0x6 specifies the IPv4's protocol value
 for TCP.
 ////
+PROTO_IPIP=4
 ipcmd parser create table/table.ip					\
 		key 0x6							\
 		node.name node.tcp
 
 ipcmd parser create table/table.ip					\
-		key 4							\
+		key $PROTO_IPIP						\
+		encap true						\
 		node.name node.ipv4
 
 ipcmd parser create table/table.ip					\
 		key 47							\
 		node.name node.gre
-echo "----------------------------------------------------------------------"
+
+ipcmd parser create table/table.others					\
+		key 0x880b						\
+		node.name node.p2p
+
+ipcmd parser create table/table.others					\
+		key 0x0021						\
+		node.name node.ipv4
+
+
 ipcmd parser create metadata name md.num_nodes				\
 		type numnodes						\
 		doff 0
@@ -437,7 +484,6 @@ ipcmd parser create parser name test_parser				\
 		rootnode.name node.ether				\
 		oknode.name node.parser_exit_ok				\
 		failnode.name node.parser_exit_fail
-echo "----------------------------------------------------------------------"
 << ////
 reads a parser object identified by name "test_parser". id can also be
 used here.
