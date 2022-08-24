@@ -59,13 +59,12 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 	int type, i, j, k;
 	const char *key;
 
-	// fprintf(stdout, "Dumping config for object/namespace:`%s`\n",
-		// 	namespace->name);
-
 	open_json_object(NULL);
 	open_json_object(namespace->name);
 	for (i = 0; i < namespace->arg_tokens_count; i++) {
 		curr_arg = &namespace->arg_tokens[i];
+		if (curr_arg->dontreport)
+			continue;
 		key = curr_arg->key_name;
 		w_offset = curr_arg->w_offset;
 		w_len = curr_arg->w_len;

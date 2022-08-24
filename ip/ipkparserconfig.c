@@ -28,6 +28,21 @@ static int check_key(int argc, const char **argv, const char *key)
 	return -1;
 }
 
+static inline int count_consecutive_bits(unsigned int *mem, size_t len,
+		bool *shiftneeded)
+{
+	int cnt = 0, i;
+	for (i = 0; i < len * BITS_IN_BYTE; i++) {
+		if (testbit(mem, i)) {
+			cnt++;
+			continue;
+		}
+		if (i == 0)
+			*shiftneeded = true;
+	}
+	return cnt;
+}
+
 #define KPARSER_ARG_S(bits, key, member, min, max, def, msg,		\
 		json_start, json_end, ...)				\
 	{								\
@@ -131,6 +146,7 @@ static int check_key(int argc, const char **argv, const char *key)
 				member),				\
 		.str_arg_len_max = KPARSER_MAX_NAME,			\
 		.help_msg = msg,					\
+		.dontreport = true,					\
 	}
 
 #define KPARSER_ARG_H_K_I(key, member, min, max, def, msg)		\
@@ -145,6 +161,7 @@ static int check_key(int argc, const char **argv, const char *key)
 		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->	\
 				member),				\
 		.help_msg = msg,					\
+		.dontreport = true,					\
 	}
 
 static const struct kparser_arg_set bool_types[] =
@@ -273,6 +290,9 @@ static const struct kparser_arg_key_val_token cond_exprs_vals[] =
 			"constant value which to be compared using the given"
 			" expression and with the extracted packet data",
 			NULL, "config"),
+	KPARSER_ARG_U(8, "rightshift", cond_conf.config.right_shift,
+			0, 0xff, 0, "number of bits to shift right to extract"
+			" the header value to compare", NULL, NULL),
 };
 
 static const struct kparser_arg_set default_fail_types[] =
@@ -401,8 +421,8 @@ static const struct kparser_arg_key_val_token cond_exprs_tables_key_vals[] =
 			KPARSER_INVALID_ID,
 			"hybrid key id for the associated table of"
 			" conditional expression table"),
-	KPARSER_ARG_HKEY("condexprstbl.name",
-			"condexprstbl.id", table_conf.elem_key,
+	KPARSER_ARG_HKEY("condexprslist.name",
+			"condexprslist.id", table_conf.elem_key,
 			"associated table of conditional expression's"
 			" name or id",
 			NULL, NULL),
@@ -786,7 +806,7 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] =
 			0, 0xff, 0, "number of bits to shift right to extract"
 			" the next protocol id field", NULL, "next_proto"),
 
-	KPARSER_ARG_HKEY("cond_exprs_table.name", "cond_exprs_table.id",
+	KPARSER_ARG_HKEY("condexprstable.name", "condexprstable.id",
 			PLAIN_NODE.proto_node.ops.cond_exprs_table,
 			"table of conditional expressions table",
 			NULL, NULL),
@@ -1023,10 +1043,6 @@ static const struct kparser_arg_key_val_token proto_table_key_vals[] =
 	KPARSER_ARG_BOOL("encap", table_conf.optional_value2, false,
 			"Set if this protocol is starting of a new"
 			" encapsulation layer", NULL, NULL),
-	KPARSER_ARG_U(32, "encap", table_conf.optional_value2,
-			0, 1, 0,
-			"<TODO>", NULL, NULL),
-
 	KPARSER_ARG_H_K_N("table.name", table_conf.key.name,
 			KPARSER_DEF_NAME_PREFIX, "<TODO>"),
 	KPARSER_ARG_H_K_I("table.id", table_conf.key.id,
@@ -1085,7 +1101,7 @@ static const struct kparser_arg_key_val_token tlv_parse_node_key_vals[] =
 			pfoverlay_type.right_shift,
 			0, 0xff, 0, 
 			"<TODO>", NULL, NULL),
-	KPARSER_ARG_HKEY("cond_exprs_table.name", "cond_exprs_table.id",
+	KPARSER_ARG_HKEY("condexprstable.name", "condexprstable.id",
 			tlv_node_conf.node_proto.ops.cond_exprs_table,
 			"<TODO>", NULL, NULL),
 
@@ -1375,13 +1391,39 @@ do {									\
 	}								\
 } while(0)
 
+static inline int cond_exprs_post_handler(const void *namespace,
+		int op, int argc, int *argidx,
+		const char **argv, const char *hybrid_token,
+		const int *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
+{
+	struct kparser_conf_condexpr *conf = &cmd_arg->cond_conf;
+	const struct kparser_global_namespaces *ns = namespace;
+	bool rightshiftneeded = false;
+	int kidx, cnt;
+
+	K2IDX("rightshift", kidx);
+	if (!testbit(ns_keys_bvs, kidx))
+		return 0; // shift in config, nothing to calculate
+	
+	K2IDX("mask", kidx);
+	if (!testbit(ns_keys_bvs, kidx)) {
+		cnt = count_consecutive_bits(&conf->config.mask,
+				conf->config.length, &rightshiftneeded);
+		if (rightshiftneeded && cnt)
+			conf->config.right_shift = cnt;
+	}
+
+	return 0;
+}
+
 static const struct kparser_global_namespaces
 kparser_arg_namespace_cond_exprs =
 {
 	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_CONDEXPRS,
 			"condexprs",
 			cond_exprs_vals,
-			"conditional expressions object", NULL, NULL),
+			"conditional expressions object",
+			NULL, cond_exprs_post_handler),
 };
 
 static inline int cond_table_post_handler(const void *namespace,
@@ -1429,12 +1471,12 @@ static inline int cond_tables_post_handler(const void *namespace,
 
 	conf->add_entry = false;
 
-	K2IDX("condexprstbl.name", kidx);
+	K2IDX("condexprslist.name", kidx);
 	if (!testbit(ns_keys_bvs, kidx)) {
 		conf->add_entry = true;
 	}
 
-	K2IDX("condexprstbl.id", kidx);
+	K2IDX("condexprslist.id", kidx);
 	if (!testbit(ns_keys_bvs, kidx)) {
 		conf->add_entry = true;
 	}
@@ -1484,21 +1526,6 @@ static const struct kparser_global_namespaces kparser_arg_namespace_metalist =
 			"metalist", mdl_key_vals,
 			"list of metadata object(s)", NULL, NULL),
 };
-
-static inline int count_consecutive_bits(unsigned int *mem, size_t len,
-		bool *shiftneeded)
-{
-	int cnt = 0, i;
-	for (i = 0; i < len * BITS_IN_BYTE; i++) {
-		if (testbit(mem, i)) {
-			cnt++;
-			continue;
-		}
-		if (i == 0)
-			*shiftneeded = true;
-	}
-	return cnt;
-}
 
 static inline int node_do_cli(int nsid,
 		int op, int argc, int *argidx,

@@ -123,5 +123,6 @@ struct kparser_arg_key_val_token {
 	const char *incompatible_keys[KPARSER_CONFIG_MAX_KEYS];
 	const char *json_recursive_object_start_name;
 	const char *json_recursive_object_end_name;
+	bool dontreport;
 };
 #endif /* _KPARSER_COMMON_H */
