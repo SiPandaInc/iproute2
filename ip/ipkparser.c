@@ -30,6 +30,28 @@ static inline bool keymatches(const char *prefix, const char *string)
 
 static const char *progname = "ip";
 
+struct kparser_cliflags {
+	const char *flagname;
+	__u32 flagvalue;
+};
+
+static struct kparser_cliflags cliflags[] = {
+	{
+		.flagname = "-reportnoindent",
+		.flagvalue = KPARSER_CLI_FLAG_DONT_REPORT_JSON_IDENTS,
+	},
+	{
+		.flagname = "-reportall",
+		.flagvalue = KPARSER_CLI_FLAG_REPORT_ALL_PARAMS,
+	},
+	{
+		.flagname = "-reportdeep",
+		.flagvalue = KPARSER_CLI_FLAG_READ_DEEP_REPORT,
+	},
+};
+
+static __u32 cliflag = 0;
+
 // WIP: TODO: use spaces while using arithmatic operators
 extern const struct kparser_global_namespaces *g_namespaces[];
 
@@ -122,12 +144,12 @@ static inline void keynamestack_push(const char *tkstart, const char *tkend,
 	open_json_object(kname);
 }
 
-static inline const char* json_indented_block_start(const char *key, int flag)
+static inline const char* json_indented_block_start(const char *key)
 {
 	const char *tkend, *tkstart;
 	int i = -1;
 
-	if (flag == 1)
+	if (cliflag & KPARSER_CLI_FLAG_DONT_REPORT_JSON_IDENTS)
 		return key;
 
 	if (strchr(key, '.') == NULL) {
@@ -176,13 +198,16 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 	enum kparser_print_id print_id;
 	bool array_dumped = false;
 	struct kparser_hkey *hks;
-	int type, i, j, k;
 	const char *key, *kname;
-	int flag = 0;
+	int type, i, j, k;
 
 	open_json_object(NULL);
 	open_json_object(namespace->name);
 	for (i = 0; i < namespace->arg_tokens_count; i++) {
+		if (!(cliflag & KPARSER_CLI_FLAG_REPORT_ALL_PARAMS) &&
+				kparsertestbit(cmd_arg->
+					conf_keys_bv.ns_keys_bvs, i))
+			continue;
 		curr_arg = &namespace->arg_tokens[i];
 		if (curr_arg->dontreport)
 			continue;
@@ -204,7 +229,7 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 
 		print_id = curr_arg->print_id;
 
-		key = json_indented_block_start(kname, flag);
+		key = json_indented_block_start(kname);
 
 		if (!key)
 			key = kname;
@@ -455,6 +480,16 @@ static inline bool parse_cmd_line_key_val_str(int argc, int *argidx,
 	}
 
 	str_arg_ptr = argv[*argidx];
+	if (!str_arg_ptr || *str_arg_ptr == '-') {
+		fprintf(stderr,
+			"Value `%s` of key `%s` starts with forbidden"
+			" character `-`! Only flags can start with `-`.\n",
+			str_arg_ptr, key);
+		*value_err = true;
+		return false;
+
+	}
+
 	if ((strlen(str_arg_ptr) + 1) > value_len) {
 		fprintf(stderr,
 			"Value `%s` of key `%s` exceeds max len %lu\n",
@@ -704,7 +739,6 @@ int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
 {
 	size_t cmd_rsp_size = 0, old_cmd_rsp_size, w_offset, w_len, cmd_arg_len;
 	bool ret = true, value_err = false, ignore_min_max = false;
-	__u32 ns_keys_bvs[(KPARSER_CONFIG_MAX_KEYS/BITS_IN_U32) + 1];
 	const struct kparser_global_namespaces *namespace;
 	const struct kparser_arg_key_val_token *curr_arg;
 	size_t *dst_array_size, elem_offset, elem_size;
@@ -718,6 +752,7 @@ int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
 	const char *key, *dependent_Key;
 	const char **incompatible_keys;
 	size_t incompatible_keys_len;
+	__u32 *ns_keys_bvs = NULL;
 	void *scratch_buf = NULL;
 	void *cmd_rsp = NULL;
 
@@ -796,7 +831,12 @@ int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
 	}
 
 	cmd_arg->namespace_id = namespace->name_space_id;
-	memset(ns_keys_bvs, 0xff, sizeof(ns_keys_bvs));
+	ns_keys_bvs = cmd_arg->conf_keys_bv.ns_keys_bvs;
+	memset(ns_keys_bvs, 0xff,
+			sizeof(cmd_arg->conf_keys_bv.ns_keys_bvs) *
+			sizeof(__u32));
+
+	// sizeof (cmd_arg->conf_keys_bv.ns_keys_bvs[0]));
 
 	for (i = 0; i < namespace->arg_tokens_count; i++) {
 		curr_arg = &namespace->arg_tokens[i];
@@ -1068,6 +1108,7 @@ array_parse_start:
 				rc = ENOMEM;
 				goto out;
 			}
+			ns_keys_bvs = cmd_arg->conf_keys_bv.ns_keys_bvs;
 			elem_offset = w_offset +
 				((*dst_array_size - 1) * elem_size);
 
@@ -1145,6 +1186,11 @@ array_parse_start:
 
 	for (i = key_start_idx; i < argc; i += 2) {
 		// printf("%s\n", argv[i]);
+		// avoid checking flags here
+		if (argv[i][0] == '-') {
+			i--; // mind that flags are not in pair, unlike keys
+			continue;
+		}
 		for (j = 0; j < namespace->arg_tokens_count; j++) {
 			curr_arg = &namespace->arg_tokens[j];
 			key = curr_arg->key_name;
@@ -1346,7 +1392,7 @@ static void usage_text(FILE *stream, bool intro, int argc, int *argidx,
 
 	if (intro)
 		fprintf(stream,
-		"Usage: \"%s parser [ operations ] [ objects ] [ args ]\"\n"
+		"Usage: \"%s parser [-flags] [ operations ] [ objects ] [ args ]\"\n"
 		"More help 1: \"%s parser help operations\"\n"
 		"More help 2: \"%s parser help objects\"\n"
 		"More help 3: \"%s parser help objects <objname>\"\n"
@@ -1722,7 +1768,7 @@ print_args:
 int do_kparser(int argc, char **argv)
 {
 	int argidx = 0;
-	int i;
+	int i = 0;
 
 	usage = usage_text;
 	if (json)
@@ -1744,14 +1790,49 @@ int do_kparser(int argc, char **argv)
 		return EIO;
 	}
 
-	for (i = 0; i < sizeof(cli_ops) / sizeof(cli_ops[0]); i++) {
-		if (argc && (argidx <= (argc - 1)) && argv && argv[argidx] &&
-			(keymatches(argv[argidx], cli_ops[i].op_name) == 0)) {
+	// scan for available flags
+	for (argidx = 0; argidx < argc; argidx++) {
+		if (!argv[argidx] || (argv[argidx][0] != '-'))
+			continue;
+		for (i = 0 ; i < (sizeof(cliflags) / sizeof(cliflags[0]));
+				i++) {
+			if(keymatches(argv[argidx], cliflags[i].flagname) ==
+					0) {
+				cliflag |= cliflags[i].flagvalue;
+				break;
+			}
+		}
+		if (i == (sizeof(cliflags) / sizeof(cliflags[0]))) {
+			fprintf(stderr, "Invalid flag `%s` in cmdline\n"
+					"check \"%s parser help flags\""
+					" for all the available flags.\n",
+					argv[argidx], progname);
+			return EINVAL;
+		}
+	}
+
+	printf("CLI flags:%x\n", cliflag);
+
+	argidx = 0;
+	i = 0;
+	do {
+		if (argc == 0 || argidx >= argc || !argv || !argv[argidx])
+			break;
+
+		if (argv[argidx][0] == '-') {
+			argidx++;
+			continue;
+		}
+
+		if (keymatches(argv[argidx], cli_ops[i].op_name) == 0) {
 			argidx++;
 			return __do_cli(cli_ops[i].op, argc, &argidx,
 				      (const char **) argv);
 		}
-	}
+
+		if (++i == (sizeof(cli_ops) / sizeof(cli_ops[0])))
+			break;
+	} while (1);
 
 	fprintf(stderr, "Invalid operation: %s\n", argv[argidx]);
 	usage(stderr, false, 0, NULL, NULL, true, false);
