@@ -5,6 +5,7 @@
 #define _KPARSER_COMMON_H
 
 #include <linux/kernel.h>
+#include <linux/kparser.h>
 #include <linux/string.h>
 #include <linux/types.h>
 
@@ -16,7 +17,6 @@
 #define KPARSER_SET_VAL_LEN_MAX		64
 #define KPARSER_DEFAULT_U16_MASK	0xffff
 #define KPARSER_DEFAULT_U32_MASK	0xffffffff
-#define KPARSER_CONFIG_MAX_KEYS		128 
 
 enum kparser_arg_val_type {
 	KPARSER_ARG_VAL_STR,
@@ -67,7 +67,7 @@ typedef int kparser_ns_arg_post_handler(
 		const void *ns,
 		int op, int argc, int *argidx,
 		const char **argv, const char *hybrid_token,
-		const int *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg);
+		const __u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg);
 
 struct kparser_global_namespaces {
 	enum kparser_global_namespace_ids name_space_id;

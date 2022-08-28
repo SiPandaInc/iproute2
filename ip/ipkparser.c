@@ -14,7 +14,6 @@
 #include <errno.h>
 #include <linux/genetlink.h>
 #include <stdbool.h>
-#include <linux/kparser.h>
 #include "libgenl.h"
 
 #include "utils.h"
@@ -29,7 +28,7 @@ static inline bool keymatches(const char *prefix, const char *string)
 	return strcmp(prefix, string);
 }
 
-static const char *progname = "tc";
+static const char *progname = "ip";
 
 // WIP: TODO: use spaces while using arithmatic operators
 extern const struct kparser_global_namespaces *g_namespaces[];
@@ -48,6 +47,127 @@ typedef void usage_handler(FILE *stream, bool intro, int argc, int *argidx,
 		char **argv, bool dump_ops, bool dump_objects);
 static usage_handler *usage = NULL;
 
+struct stackobj {
+	const char *tk;
+	const char *key;
+	int tklen;
+};
+
+struct keynamestack {
+	int top;
+	struct stackobj obj[KPARSER_CONFIG_MAX_KEYS];
+};
+
+static struct keynamestack knstack = {.top = -1};
+
+static inline void keynamestack_pop(int level)
+{
+	int i, j = knstack.top;
+
+	if ((knstack.top == -1) || (level > knstack.top))
+		return;
+
+	for (i = j; i >= level; i--) {
+		if (knstack.top == -1)
+			break;
+		close_json_object();
+		knstack.top--;
+	}
+}
+
+static inline void keynamestack_push(const char *tkstart, const char *tkend,
+		int level)
+{
+	char kname[256];
+	int i, j, tklen = tkend - tkstart + 1;
+
+	memcpy(kname, tkstart, tklen);
+	kname[tklen] = '\0';
+
+	if (knstack.top == -1) {
+		// very first entry
+		knstack.top++;
+		knstack.obj[knstack.top].tk = tkstart;
+		knstack.obj[knstack.top].tklen = tklen;
+		open_json_object(kname);
+		return;
+	}
+
+	for (j = 0; j <= knstack.top; j++) {
+//			j, knstack.obj[j].tk, knstack.obj[j].tklen);
+	} 
+	// avoid inserting duplicate tokens
+	for (i = 0; i <= knstack.top; i++) {
+		if ((knstack.obj[i].tklen == tklen) &&
+				(memcmp(knstack.obj[i].tk,
+					tkstart, tklen) == 0)) {
+			return; // already exists and opened, do nothing
+		}
+	}
+
+	/* if the last token at the same level in stack does not match,
+	 * json close from that level and remove those entries
+	 */
+	if (level <= knstack.top) {
+		if (knstack.obj[level].tklen != tklen)
+			keynamestack_pop(level);
+		else if (memcmp(knstack.obj[level].tk, tkstart, tklen) != 0)
+			keynamestack_pop(level);
+	}
+
+	// now insert it
+	knstack.top++;
+	knstack.obj[knstack.top].tk = tkstart;
+	knstack.obj[knstack.top].tklen = tklen;
+	open_json_object(kname);
+}
+
+static inline const char* json_indented_block_start(const char *key, int flag)
+{
+	const char *tkend, *tkstart;
+	int i = -1;
+
+	if (flag == 1)
+		return key;
+
+	if (strchr(key, '.') == NULL) {
+		/* current key does not have hierarchy, so close all the
+		 * previous JSON hierarchies if any as well while processing
+		 * current key.
+		 */
+		while(knstack.top != -1) {
+			close_json_object();
+			knstack.top--;	
+		}
+		// nothing is there for JSON hierarchy indents, so return
+		return NULL;
+	}
+
+	/* key has '.', so parse and store in stack but ensure no duplicate
+	 * if duplicate
+	 */
+	tkstart = key;
+	while(1) {
+		tkend = strchr(tkstart, '.');
+		if (tkend == NULL) {
+			// last token, nothing to do
+			keynamestack_pop(i+1);
+			break;
+		}
+		i++;
+		tkend--;
+		// push this stoken into stack
+		keynamestack_push(tkstart, tkend, i);
+		// move to next token
+		if (tkend + 2 > (key + strlen(key) + 1))
+			break;
+		tkend +=2;
+		tkstart = tkend;
+	}
+
+	return tkstart;
+}
+
 static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 		const struct kparser_conf_cmd *cmd_arg)
 {
@@ -57,7 +177,8 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 	bool array_dumped = false;
 	struct kparser_hkey *hks;
 	int type, i, j, k;
-	const char *key;
+	const char *key, *kname;
+	int flag = 0;
 
 	open_json_object(NULL);
 	open_json_object(namespace->name);
@@ -65,7 +186,7 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 		curr_arg = &namespace->arg_tokens[i];
 		if (curr_arg->dontreport)
 			continue;
-		key = curr_arg->key_name;
+		kname = curr_arg->key_name;
 		w_offset = curr_arg->w_offset;
 		w_len = curr_arg->w_len;
 		elem_size = curr_arg->elem_size;
@@ -78,10 +199,15 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 		if (type != KPARSER_ARG_VAL_ARRAY)
 			type = curr_arg->type;
 
-		if (!key)
-			key = curr_arg->key_name;
+		if (!kname)
+			kname = curr_arg->key_name;
 
 		print_id = curr_arg->print_id;
+
+		key = json_indented_block_start(kname, flag);
+
+		if (!key)
+			key = kname;
 
 		switch (type) {
 		case KPARSER_ARG_VAL_HYB_KEY_NAME:
@@ -165,10 +291,12 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 				return;
 			}
 			array_dumped = true;
-			open_json_array(PRINT_JSON, "Array HKEYs");
 			elems = *(size_t *)
 				(((void *) cmd_arg) + elem_counter);
 			hks =  ((void *) cmd_arg) + w_offset;
+			if (elems == 0)
+				break;
+			open_json_array(PRINT_JSON, "Array HKEYs");
 			// fprintf(stdout, "\t\tarray len:%lu\n", elems);
 			for (k = 0; k < elems; k++) {
 				open_json_object(NULL);
@@ -184,6 +312,7 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 			break;
 		}
 	}
+	keynamestack_pop(-1);
 	close_json_object();
 	close_json_object();
 }
@@ -575,11 +704,12 @@ int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
 {
 	size_t cmd_rsp_size = 0, old_cmd_rsp_size, w_offset, w_len, cmd_arg_len;
 	bool ret = true, value_err = false, ignore_min_max = false;
-	int ns_keys_bvs[KPARSER_CONFIG_MAX_KEYS], type, elem_type;
+	__u32 ns_keys_bvs[(KPARSER_CONFIG_MAX_KEYS/BITS_IN_U32) + 1];
 	const struct kparser_global_namespaces *namespace;
 	const struct kparser_arg_key_val_token *curr_arg;
 	size_t *dst_array_size, elem_offset, elem_size;
 	int i, j, rc, op_attr_id, key_start_idx = 0;
+	int other_mandatory_idx, type, elem_type;
 	struct kparser_conf_cmd *cmd_arg = NULL;
 	char types_buf[KPARSER_SET_VAL_LEN_MAX];
 	size_t offset_adjust, elem_counter;
@@ -589,7 +719,6 @@ int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
 	const char **incompatible_keys;
 	size_t incompatible_keys_len;
 	void *scratch_buf = NULL;
-	int other_mandatory_idx;
 	void *cmd_rsp = NULL;
 
 	if (nsid <= KPARSER_NS_INVALID || nsid >= KPARSER_NS_MAX)
@@ -742,7 +871,7 @@ int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
 					goto out;
 				}
 				INCOMPATIBLE_KEY_CHECK;
-				clearbit(ns_keys_bvs, i);
+				kparserclearbit(ns_keys_bvs, i);
 				break;
 			}
 			if (curr_arg->mandatory || value_err) {
@@ -780,7 +909,7 @@ int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
 					goto out;
 				}
 				INCOMPATIBLE_KEY_CHECK;
-				clearbit(ns_keys_bvs, i);
+				kparserclearbit(ns_keys_bvs, i);
 				break;
 			}
 			if (curr_arg->mandatory || value_err) {
@@ -830,7 +959,7 @@ int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
 						&curr_arg->value_set[j].
 							set_value_enum, w_len);
 					INCOMPATIBLE_KEY_CHECK;
-					clearbit(ns_keys_bvs, i);
+					kparserclearbit(ns_keys_bvs, i);
 					break;
 				}
 			}
@@ -983,15 +1112,16 @@ array_parse_start:
 		if ((op == op_update) && curr_arg->immutable)
 			continue;
 #if 0
-		printf("%d:I:%d\n", i, testbit(ns_keys_bvs, i));
+		printf("%d:I:%d\n", i, kparsertestbit(ns_keys_bvs, i));
 		printf("%d:OM:%d\n", other_mandatory_idx,
-				testbit(ns_keys_bvs, other_mandatory_idx));
+				kparsertestbit(ns_keys_bvs, other_mandatory_idx));
 		printf("dependency check for token key:`%s`, %d\n",
 				key, curr_arg->semi_optional);
 #endif
 
-		if (testbit(ns_keys_bvs, i) &&
-				testbit(ns_keys_bvs, other_mandatory_idx)) {
+		if (kparsertestbit(ns_keys_bvs, i) &&
+				kparsertestbit(ns_keys_bvs,
+					other_mandatory_idx)) {
 			dependent_Key = namespace->arg_tokens[
 				other_mandatory_idx].key_name;
 			if (namespace->arg_tokens[other_mandatory_idx].
@@ -1341,7 +1471,7 @@ print_args:
 				case KPARSER_ARG_VAL_U32:
 				case KPARSER_ARG_VAL_U64:
 					fprintf(stream,
-						"\n\t\tmin:%llu, def:%llu,"
+						"\n\t\tmin:%llu, default:%llu,"
 						" max:%llu",
 						token->min_value,
 						token->def_value,
@@ -1390,7 +1520,7 @@ static void usage_json(FILE *stream, bool intro, int argc, int *argidx,
 {
 	const struct kparser_arg_key_val_token *token;
 	const char *arg_name, *ns = NULL, *arg = NULL;
-	const char *default_set_value = NULL, *empty = "NULL";
+	const char *default_set_value = NULL, *empty = "";
 	int i, j, k;
 
 	if (dump_ops)
@@ -1543,7 +1673,7 @@ print_args:
 				case KPARSER_ARG_VAL_U64:
 					print_uint(PRINT_ANY, "min", "",
 							token->min_value);
-					print_uint(PRINT_ANY, "def", "",
+					print_uint(PRINT_ANY, "default", "",
 							token->def_value);
 					print_uint(PRINT_ANY, "max", "",
 							token->max_value);
