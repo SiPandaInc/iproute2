@@ -22,12 +22,12 @@ ipcmd() {
 # It is used to lookup ipproto (in this case only tcp).
 # Entries of this table will be added later in this script.
 # ipcmd parser create table name table.ip
-ipcmd parser -reportnoindent -reportall create table name table.ip
+ipcmd parser create table name table.ip
 
 # Creates a lookup table object named table.ether
 # It is used to lookup ethproto (in this case only IPv4).
 # Entries of this table will be added later in this script.
-ipcmd parser create table name table.ether -reportdeep
+ipcmd parser create table name table.ether
 
 # This is a metadata extraction rule to derive the bit offset of ipproto field
 # from packet and store in the user provided metadata buffer.

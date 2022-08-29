@@ -21,6 +21,7 @@
 #define KPARSER_CLI_FLAG_DONT_REPORT_JSON_IDENTS	(1 << 0)
 #define KPARSER_CLI_FLAG_REPORT_ALL_PARAMS		(1 << 1)
 #define KPARSER_CLI_FLAG_READ_DEEP_REPORT		(1 << 2)
+#define KPARSER_CLI_FLAG_READ_REPORT_LINKED		(1 << 3)
 
 enum kparser_arg_val_type {
 	KPARSER_ARG_VAL_STR,
@@ -128,5 +129,6 @@ struct kparser_arg_key_val_token {
 	const char *json_recursive_object_start_name;
 	const char *json_recursive_object_end_name;
 	bool dontreport;
+	bool id;
 };
 #endif /* _KPARSER_COMMON_H */

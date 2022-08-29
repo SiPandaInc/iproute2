@@ -9,7 +9,6 @@
  * Authors:	Pratyush Khan <pratyush@sipanda.io>
  */
 
-
 #include <arpa/inet.h>
 #include <errno.h>
 #include <stdbool.h>
@@ -100,6 +99,7 @@ static inline int count_consecutive_bits(unsigned int *mem, size_t len,
 				member.name),				\
 		.help_msg = "object's name",				\
 		.incompatible_keys = { __VA_ARGS__ },			\
+		.id = true,						\
 	}
 
 #define KPARSER_ARG_HKEY_ID(key, member, msg, ...)			\
@@ -113,21 +113,8 @@ static inline int count_consecutive_bits(unsigned int *mem, size_t len,
 				member.id),				\
 		.help_msg = "object's id",				\
 		.incompatible_keys = { __VA_ARGS__ },			\
+		.id = true,						\
 	}
-
-#define KPARSER_ARG_BOOL(key_name_arg, member, def_value, msg, ...)	\
-{									\
-	.type = KPARSER_ARG_VAL_SET,					\
-	.key_name = key_name_arg,					\
-	.value_set_len = sizeof(bool_types) / sizeof(bool_types[0]),	\
-	.value_set = bool_types,					\
-	.str_arg_len_max = KPARSER_SET_VAL_LEN_MAX,			\
-	.def_value_enum = def_value,					\
-	.w_offset = offsetof(struct kparser_conf_cmd, member),		\
-	.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->member),	\
-	.help_msg = msg,						\
-	.incompatible_keys = { __VA_ARGS__ },				\
-}
 
 #define KPARSER_ARG_HKEY(keyname, idname, member, msg, ...)		\
 	KPARSER_ARG_HKEY_NAME(keyname, member, msg, __VA_ARGS__),	\
@@ -143,6 +130,7 @@ static inline int count_consecutive_bits(unsigned int *mem, size_t len,
 		.str_arg_len_max = KPARSER_MAX_NAME,			\
 		.help_msg = msg,					\
 		.dontreport = true,					\
+		.id = true,						\
 	}
 
 #define KPARSER_ARG_H_K_I(key, member, min, max, def, msg)		\
@@ -158,7 +146,22 @@ static inline int count_consecutive_bits(unsigned int *mem, size_t len,
 				member),				\
 		.help_msg = msg,					\
 		.dontreport = true,					\
+		.id = true,						\
 	}
+
+#define KPARSER_ARG_BOOL(key_name_arg, member, def_value, msg, ...)	\
+{									\
+	.type = KPARSER_ARG_VAL_SET,					\
+	.key_name = key_name_arg,					\
+	.value_set_len = sizeof(bool_types) / sizeof(bool_types[0]),	\
+	.value_set = bool_types,					\
+	.str_arg_len_max = KPARSER_SET_VAL_LEN_MAX,			\
+	.def_value_enum = def_value,					\
+	.w_offset = offsetof(struct kparser_conf_cmd, member),		\
+	.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->member),	\
+	.help_msg = msg,						\
+	.incompatible_keys = { __VA_ARGS__ },				\
+}
 
 static const struct kparser_arg_set bool_types[] =
 {
@@ -179,6 +182,7 @@ static const struct kparser_arg_key_val_token hkey_name = {
 		.other_mandatory_idx = -1,
 		.str_arg_len_max = KPARSER_MAX_NAME,
 		.help_msg = "string name of hash key",
+		.id = true,
 };
 
 static const struct kparser_arg_key_val_token hkey_id = {
@@ -192,6 +196,7 @@ static const struct kparser_arg_key_val_token hkey_id = {
 		.max_value = KPARSER_USER_ID_MAX,
 		.print_id = KPARSER_PRINT_HEX,
 		.help_msg = "unsigned 16 bit hash key id",
+		.id = true,
 };
 
 static const struct kparser_arg_set expr_types[] =

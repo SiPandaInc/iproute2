@@ -33,20 +33,35 @@ static const char *progname = "ip";
 struct kparser_cliflags {
 	const char *flagname;
 	__u32 flagvalue;
+	const char *help;
 };
 
 static struct kparser_cliflags cliflags[] = {
 	{
 		.flagname = "-reportnoindent",
 		.flagvalue = KPARSER_CLI_FLAG_DONT_REPORT_JSON_IDENTS,
+		.help = "Set this flag to convert `.` based names to JSON"
+			" indetnted objects for better readability.",
 	},
 	{
-		.flagname = "-reportall",
+		.flagname = "-reportallparams",
 		.flagvalue = KPARSER_CLI_FLAG_REPORT_ALL_PARAMS,
+		.help = "Set this flag to report all the members of objects,"
+			" even if they were not configured in CLI."
+
 	},
 	{
 		.flagname = "-reportdeep",
 		.flagvalue = KPARSER_CLI_FLAG_READ_DEEP_REPORT,
+		.help = "Set this flag to report all the members of all the"
+			" table/list objects in a read command, otherwise only"
+			" their identifiers (name and id) will be dumped."
+	},
+	{
+		.flagname = "-reportlinked",
+		.flagvalue = KPARSER_CLI_FLAG_READ_REPORT_LINKED,
+		.help = "Set this flag to report all the linked objects"
+			" of the specified object during a read command."
 	},
 };
 
@@ -190,7 +205,9 @@ static inline const char* json_indented_block_start(const char *key)
 	return tkstart;
 }
 
-static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
+static int objsreportedcount;
+
+static void dump_an_obj(const struct kparser_global_namespaces *namespace,
 		const struct kparser_conf_cmd *cmd_arg)
 {
 	size_t w_offset, w_len, elem_counter, elem_size, elems;
@@ -199,10 +216,14 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 	bool array_dumped = false;
 	struct kparser_hkey *hks;
 	const char *key, *kname;
+	char objnamebuf[128];
 	int type, i, j, k;
 
-	open_json_object(NULL);
+	sprintf(objnamebuf, "objidx:%d", objsreportedcount);
+
+	open_json_object(objnamebuf);
 	open_json_object(namespace->name);
+
 	for (i = 0; i < namespace->arg_tokens_count; i++) {
 		if (!(cliflag & KPARSER_CLI_FLAG_REPORT_ALL_PARAMS) &&
 				kparsertestbit(cmd_arg->
@@ -226,6 +247,15 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 
 		if (!kname)
 			kname = curr_arg->key_name;
+
+		if (objsreportedcount && !(cliflag &
+					KPARSER_CLI_FLAG_READ_DEEP_REPORT)) {
+			/* for aux objects, dump only id nodes, i.e.
+			 * for `name ` and/or `id`
+			 */
+			if (!curr_arg->id)
+				continue;
+		}
 
 		print_id = curr_arg->print_id;
 
@@ -340,6 +370,7 @@ static void dump_cmd_arg(const struct kparser_global_namespaces *namespace,
 	keynamestack_pop(-1);
 	close_json_object();
 	close_json_object();
+	objsreportedcount++;
 }
 
 static bool dump_cmd_rsp_object(const struct kparser_cmd_rsp_hdr *rsp,
@@ -367,7 +398,7 @@ static bool dump_cmd_rsp_object(const struct kparser_cmd_rsp_hdr *rsp,
 					rconf->namespace_id);
 			continue;
 		}
-		dump_cmd_arg(g_namespaces[rconf->namespace_id], rconf);
+		dump_an_obj(g_namespaces[rconf->namespace_id], rconf);
 	}
 	return true;
 }
@@ -376,6 +407,7 @@ static void dump_cmd_rsp(const struct kparser_global_namespaces *namespace,
 		const void *cmd_rsp, size_t *cmd_rsp_size)
 {
 	const struct kparser_cmd_rsp_hdr *rsp = cmd_rsp;
+	int i;
 
 	if (!cmd_rsp || !cmd_rsp_size || *cmd_rsp_size < sizeof(*rsp)) {
 		fprintf(stderr, "size error, %lu instead of %lu=>%lu\n",
@@ -397,11 +429,23 @@ static void dump_cmd_rsp(const struct kparser_global_namespaces *namespace,
 		namespace = g_namespaces[rsp->object.namespace_id];
 	}
 
+	if (objsreportedcount == 0) {
+		open_json_object("cliparams");
+		open_json_array(PRINT_JSON, "flags");
+		for (i = 0; i < (sizeof(cliflags) / sizeof(cliflags[0])); i++)
+			if (cliflag & cliflags[i].flagvalue)
+					print_string(PRINT_JSON, NULL, "%s", 
+						cliflags[i].flagname);
+		close_json_array(PRINT_JSON, NULL);
+		close_json_object();
+	}
+
+
 	open_json_object(NULL);
-	open_json_object("exec summary");
-	print_hex(PRINT_ANY, "op_ret_code", "%d", rsp->op_ret_code);
-	print_string(PRINT_ANY, "op_desc", "%s", (char *) rsp->err_str_buf);
-	print_hex(PRINT_ANY, "Total objects", "%d", rsp->objects_len + 1);
+	open_json_object("execsummary");
+	print_hex(PRINT_ANY, "opretcode", "%d", rsp->op_ret_code);
+	print_string(PRINT_ANY, "opdesc", "%s", (char *) rsp->err_str_buf);
+	print_hex(PRINT_ANY, "objectscounttotal", "%d", rsp->objects_len + 1);
 	close_json_object();
 	close_json_object();
 
@@ -409,9 +453,12 @@ static void dump_cmd_rsp(const struct kparser_global_namespaces *namespace,
 
 	if (rsp->op_ret_code == 0) {
 		// fprintf(stdout, "rsp:obj dump starts\n");
-		dump_cmd_arg(namespace, &rsp->object);
+		dump_an_obj(namespace, &rsp->object);
 		if (rsp->objects_len) {
+			open_json_array(PRINT_JSON,
+					"list/table");
 			dump_cmd_rsp_object(rsp, cmd_rsp_size);
+			close_json_array(PRINT_JSON, NULL);
 		}
 	}
 	// fprintf(stdout, "rsp:obj dump ends\n");
@@ -795,6 +842,7 @@ int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
 				namespace->name);
 		return ENOMEM;
 	}
+	cmd_arg->namespace_id = namespace->name_space_id;
 
 	switch (op) {
 	case op_create:
@@ -808,6 +856,8 @@ int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
 	case op_read:
 		ignore_min_max = true;
 		op_attr_id = namespace->read_attr_id;
+		cmd_arg->recursive_read_delete =
+			cliflag & KPARSER_CLI_FLAG_READ_REPORT_LINKED;
 		break;
 
 	case op_lock:
@@ -830,13 +880,9 @@ int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
 		return EINVAL;
 	}
 
-	cmd_arg->namespace_id = namespace->name_space_id;
-	ns_keys_bvs = cmd_arg->conf_keys_bv.ns_keys_bvs;
-	memset(ns_keys_bvs, 0xff,
-			sizeof(cmd_arg->conf_keys_bv.ns_keys_bvs) *
-			sizeof(__u32));
 
-	// sizeof (cmd_arg->conf_keys_bv.ns_keys_bvs[0]));
+	ns_keys_bvs = cmd_arg->conf_keys_bv.ns_keys_bvs;
+	memset(ns_keys_bvs, 0xff, sizeof(cmd_arg->conf_keys_bv.ns_keys_bvs));
 
 	for (i = 0; i < namespace->arg_tokens_count; i++) {
 		curr_arg = &namespace->arg_tokens[i];
@@ -1227,7 +1273,7 @@ undesired_key_check_validation_done:
 
 #if 0
 	new_json_obj(json);
-	dump_cmd_arg(namespace, cmd_arg);
+	dump_an_obj(namespace, cmd_arg);
 	delete_json_obj();
 #endif
 
@@ -1248,10 +1294,19 @@ undesired_key_check_validation_done:
 
 	old_cmd_rsp_size = cmd_rsp_size;
 	new_json_obj(json);
+	objsreportedcount = 0;
+	i = 0;
 	while (cmd_rsp_size >= sizeof(*cmd_rsp)) {
+		if (i == 1)
+			open_json_array(PRINT_JSON, "associatedobjects");
 		dump_cmd_rsp(NULL, cmd_rsp + (old_cmd_rsp_size - cmd_rsp_size),
 				&cmd_rsp_size);
+		i++;
 	}
+
+	if (i >= 2)
+		close_json_array(PRINT_JSON, NULL);
+
 	delete_json_obj();
 out:
 	if (cmd_arg)
@@ -1810,8 +1865,6 @@ int do_kparser(int argc, char **argv)
 			return EINVAL;
 		}
 	}
-
-	printf("CLI flags:%x\n", cliflag);
 
 	argidx = 0;
 	i = 0;
