@@ -16,11 +16,35 @@
 #include "utils.h"
 #include "kparser_common.h"
 
+static inline void dump_inline_expanded_cli_cmd(int argc, const char **argv)
+{
+	int i;
+	printf("\nDumping inline CLI cmd expansion: {parser ");
+	for (i = 0; i < argc; i++)
+		printf("%s ", argv[i]);
+	printf("}\n");
+}
+
 static int check_key(int argc, const char **argv, const char *key)
 {
 	int i;
 
 	for (i = 0; i < argc; i += 2)
+		if (!strcmp(argv[i], key))
+			return i;
+
+	return -1;
+}
+
+static int check_key_idx(int argc, int start, const char **argv,
+		const char *key)
+{
+	int i;
+
+	if (start >= argc)
+		return -1;
+
+	for (i = start; i < argc; i += 2)
 		if (!strcmp(argv[i], key))
 			return i;
 
@@ -130,7 +154,6 @@ static inline int count_consecutive_bits(unsigned int *mem, size_t len,
 		.str_arg_len_max = KPARSER_MAX_NAME,			\
 		.help_msg = msg,					\
 		.dontreport = true,					\
-		.id = true,						\
 	}
 
 #define KPARSER_ARG_H_K_I(key, member, min, max, def, msg)		\
@@ -146,7 +169,6 @@ static inline int count_consecutive_bits(unsigned int *mem, size_t len,
 				member),				\
 		.help_msg = msg,					\
 		.dontreport = true,					\
-		.id = true,						\
 	}
 
 #define KPARSER_ARG_BOOL(key_name_arg, member, def_value, msg, ...)	\
@@ -260,17 +282,20 @@ static const struct kparser_arg_key_val_token cond_exprs_vals[] =
 				cond_conf.config.type),
 		.help_msg = "conditional expression type",
 	},
-	KPARSER_ARG_U(16, "srcoff", cond_conf.config.src_off, 0, 0xffff, 0,
-			"packet data field's start offset for evaluation"),
-	KPARSER_ARG_U(8, "len", cond_conf.config.length, 0, 0xff, 0,
-			"packet data field length for evaluation"),
+	KPARSER_ARG_U(16, "src.field-off", cond_conf.config.src_off, 0, 0xffff,
+			0,
+			"Start offset in the packet data relative"
+			" the current protocol header. The derived bytes will"
+			" be evaluated."),
+	KPARSER_ARG_U(8, "src.field-len", cond_conf.config.length, 0, 0xff, 0,
+			"Length of the field which will be evaluated."),
 	KPARSER_ARG_U_HEX(32, "mask", cond_conf.config.mask, 0,
 			KPARSER_DEFAULT_U32_MASK, KPARSER_DEFAULT_U32_MASK,
-			"mask to extract the packet data field"),
+			"Mask to extract the packet data field"),
 	KPARSER_ARG_U(32, "value", cond_conf.config.value, 0,
 			0xffffffff, 0,
-			"constant value which to be compared using the given"
-			" expression and with the extracted packet data"),
+			"Constant value to be compared with the derived packet"
+			" data using the given `type` expression."),
 };
 
 static const struct kparser_arg_set default_fail_types[] =
@@ -565,9 +590,9 @@ static const struct kparser_arg_key_val_token md_key_vals[] =
 			"associated counter data"),
 	KPARSER_ARG_U(8, "constantvalue", md_conf.constant_value, 0, 0xff, 0,
 			"associated constant value"),
-	KPARSER_ARG_U(64, "soff", md_conf.soff, 0, 0xffffffff, 0,
+	KPARSER_ARG_U(64, "hdr-src-off", md_conf.soff, 0, 0xffffffff, 0,
 			"start offset"),
-	KPARSER_ARG_U(64, "doff", md_conf.doff, 0, 0xffffffff, 0,
+	KPARSER_ARG_U(64, "md-off", md_conf.doff, 0, 0xffffffff, 0,
 			"destination metadata/metametadata offset", NULL, NULL),
 	KPARSER_ARG_U(64, "length", md_conf.len, 0, 0xffffffff, 2,
 			"length in bytes"),
@@ -610,7 +635,7 @@ static const struct kparser_arg_key_val_token mdl_key_vals[] =
 		.w_offset = offsetof(struct kparser_conf_cmd,
 				mdl_conf.metadata_keys),
 		.w_len = sizeof(((struct kparser_hkey *) NULL)->id),
-		.key_name = "metadata-id",
+		.key_name = "md.rule-id",
 		.help_msg = "associated metadata object's id",
 	},
 	[3] {
@@ -623,7 +648,7 @@ static const struct kparser_arg_key_val_token mdl_key_vals[] =
 		.w_offset = offsetof(struct kparser_conf_cmd,
 				mdl_conf.metadata_keys),
 		.w_len = sizeof(((struct kparser_hkey *) NULL)->name),
-		.key_name = "metadata",
+		.key_name = "md.rule",
 		.offset_adjust = sizeof(((struct kparser_hkey *) NULL)->id),
 		.help_msg = "associated metadata object's name",
 	},
@@ -707,42 +732,41 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] =
 			0, 0xffffffff, -12,
 			"Code to return for a miss on the protocol table and"
 			" the wildcard node is not set"),
-	KPARSER_ARG_HKEY("nxt.table", "nxt.table-id",
-			PLAIN_NODE.proto_table_key,
-			"associated protocol table's name or id"),
-	KPARSER_ARG_HKEY("nxt.wildcardparsenode", "nxt.wildcardparsenode-id",
-			PLAIN_NODE.wildcard_parse_node_key,
-			"Node use for a miss on next protocol lookup"),
-	KPARSER_ARG_HKEY("metalist", "metalist-id",
+	KPARSER_ARG_HKEY("md.ruleset", "md.ruleset-id",
 			PLAIN_NODE.metadata_table_key,
 			"Table of parameterized metadata operations"),
 
 	// params for plain parse node
-	KPARSER_ARG_BOOL("nxt.encap", PLAIN_NODE.proto_node.encap, false,
-			"Set to indicate next protocol after this will start"
-			" in a separate encapsulation layer"),
 	KPARSER_ARG_BOOL("overlay", PLAIN_NODE.proto_node.overlay, false,
 			"Set to indicates this is an overlay parsing"),
-	KPARSER_ARG_U(64, "hdr.minlen", PLAIN_NODE.proto_node.min_len,
+	KPARSER_ARG_U(64, "min-hdr-length", PLAIN_NODE.proto_node.min_len,
 			0, 0xffff, 0, "Minimum length of the protocol header"),
-	KPARSER_ARG_U(16, "hdr.len.off",
+
+#define HDR_LEN_FIELD_OFF_KEY "hdr.len.field-off"
+	KPARSER_ARG_U(16, HDR_LEN_FIELD_OFF_KEY,
 			PLAIN_NODE.proto_node.ops.pflen.src_off,
 			0, 0xffff, 0,
 			"relative start offset of this protocol header after"
 			" the previous header ends"),
-	KPARSER_ARG_U(8, "hdr.len.len",
+
+#define HDR_LEN_FIELD_LEN_KEY "hdr.len.field-len"
+	KPARSER_ARG_U(8, HDR_LEN_FIELD_LEN_KEY,
 			PLAIN_NODE.proto_node.ops.pflen.size,
-			0, 0xff, 0, "this protocol header's length field's"
+			0, 4, 0, "this protocol header's length field's"
 			" size in bytes"),
 	KPARSER_ARG_BOOL("hdr.len.endian",
 			PLAIN_NODE.proto_node.ops.pflen.endian, false,
 			"Set this field if host byte order conversion is needed"
 			" to calculate the header length"),
-	KPARSER_ARG_U_HEX(32, "hdr.len.mask",
+
+#define HDR_LEN_MASK_KEY "hdr.len.mask"
+	KPARSER_ARG_U_HEX(32, HDR_LEN_MASK_KEY,
 			PLAIN_NODE.proto_node.ops.pflen.mask,
 			0, KPARSER_DEFAULT_U32_MASK, KPARSER_DEFAULT_U32_MASK,
 			"mask to extract the header length value"),
-	KPARSER_ARG_U(8, "hdr.len.rightshift",
+
+#define HDR_LEN_RSHIFT_KEY "hdr.len.rightshift"
+	KPARSER_ARG_U(8, HDR_LEN_RSHIFT_KEY,
 			PLAIN_NODE.proto_node.ops.pflen.right_shift,
 			0, 0xff, 0, "number of bits to shift right to extract"
 			" the header length value"),
@@ -750,23 +774,36 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] =
 			PLAIN_NODE.proto_node.ops.pflen.multiplier,
 			0, 0xff, 1, "constant multiplier to calculate final"
 			" header length in bytes"),
-	KPARSER_ARG_U(8, "hdr.len.addvalue",
+#define HDR_LEN_ADDVAL_KEY "hdr.len.addvalue"
+	KPARSER_ARG_U(8, HDR_LEN_ADDVAL_KEY,
 			PLAIN_NODE.proto_node.ops.pflen.add_value,
 			0, 0xff, 0, "constant value to be added with extracted"
 			" header length to calculate final length"),
 
-	KPARSER_ARG_U(16, "nxt.offset",
+	// paramdds for plain parse node ends
+	KPARSER_ARG_HKEY("nxt.table", "nxt.table-id",
+			PLAIN_NODE.proto_table_key,
+			"associated protocol table's name or id"),
+	KPARSER_ARG_HKEY("nxt.wildcardparsenode", "nxt.wildcardparsenode-id",
+			PLAIN_NODE.wildcard_parse_node_key,
+			"Node use for a miss on next protocol lookup"),
+	// paramdds for plain parse node 
+	KPARSER_ARG_BOOL("nxt.encap", PLAIN_NODE.proto_node.encap, false,
+			"Set to indicate next protocol after this will start"
+			" in a separate encapsulation layer"),
+
+	KPARSER_ARG_U(16, "nxt.field-off",
 			PLAIN_NODE.proto_node.ops.pfnext_proto.src_off,
 			0, 0xffff, 0, "relative offset to identify the start"
 			" of the next protocol number identifier"),
+	KPARSER_ARG_U(8, "nxt.field-len",
+			PLAIN_NODE.proto_node.ops.pfnext_proto.size,
+			0, 0xff, 0,
+			"size of the next protocol identifier field"),
 	KPARSER_ARG_U_HEX(16, "nxt.mask",
 			PLAIN_NODE.proto_node.ops.pfnext_proto.mask,
 			0, KPARSER_DEFAULT_U16_MASK, KPARSER_DEFAULT_U16_MASK,
 			"mask to extract the next protocol identifier"),
-	KPARSER_ARG_U(8, "nxt.length",
-			PLAIN_NODE.proto_node.ops.pfnext_proto.size,
-			0, 0xff, 0,
-			"size of the next protocol identifier field"),
 	KPARSER_ARG_U(8, "nxt.rightshift",
 			PLAIN_NODE.proto_node.ops.pfnext_proto.right_shift,
 			0, 0xff, 0, "number of bits to shift right to extract"
@@ -777,41 +814,45 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] =
 			"table of conditional expressions table"),
 
 	// params for tlvs parse node
-	KPARSER_ARG_U(16, "tlvs.hdr.len.off",
+	KPARSER_ARG_U(64, "tlvs.startoff.constantoff",
+			TLVS_NODE.proto_node.start_offset,
+			0, 0xffffffff, 0, "When there TLVs start relative the"
+			" enapsulating protocol"),
+	KPARSER_ARG_U(16, "tlvs.startoff.dynamicoff.field-off",
 			TLVS_NODE.proto_node.ops.pfstart_offset.src_off,
 			0, 0xffff, 0,
 			"relative start offset of this tlv header after"
 			" the previous header ends"),
-	KPARSER_ARG_U(8, "tlvs.hdr.len.len",
+	KPARSER_ARG_U(8, "tlvs.startoff.dynamicoff.field-len",
 			TLVS_NODE.proto_node.ops.pfstart_offset.size,
 			0, 0xff, 0, "this tlv header's length field's"
 			" size in bytes"),
-	KPARSER_ARG_BOOL("tlvs.hdr.len.endian",
+	KPARSER_ARG_BOOL("tlvs.startoff.dynamicoff.endian",
 			TLVS_NODE.proto_node.ops.pfstart_offset.endian, false,
 			"Set this field if host byte order conversion is"
 			" needed to calculate the header length"),
-	KPARSER_ARG_U_HEX(32, "tlvs.hdr.len.mask",
+	KPARSER_ARG_U_HEX(32, "tlvs.startoff.dynamicoff.mask",
 			TLVS_NODE.proto_node.ops.pfstart_offset.mask,
 			0, KPARSER_DEFAULT_U32_MASK, KPARSER_DEFAULT_U32_MASK,
 			"mask to extract the header length value", NULL, NULL),
-	KPARSER_ARG_U(8, "tlvs.hdr.len.rightshift",
+	KPARSER_ARG_U(8, "tlvs.startoff.dynamicoff.rightshift",
 			TLVS_NODE.proto_node.ops.pfstart_offset.right_shift,
 			0, 0xff, 0, "number of bits to shift right to extract"
 			" this tlv header length value"),
-	KPARSER_ARG_U(8, "tlvs.hdr.len.multiplier",
+	KPARSER_ARG_U(8, "tlvs.startoff.dynamicoff.multiplier",
 			TLVS_NODE.proto_node.ops.pfstart_offset.multiplier,
 			0, 0xff, 1, "constant multiplier to calculate final"
 			" header length in bytes"),
-	KPARSER_ARG_U(8, "tlvs.hdr.len.addvalue",
+	KPARSER_ARG_U(8, "tlvs.startoff.dynamicoff.addvalue",
 			TLVS_NODE.proto_node.ops.pfstart_offset.add_value,
 			0, 0xff, 0, "constant value to be added with extracted"
 			" header length to calculate final length"),
 
-	KPARSER_ARG_U(16, "tlvs.len.off",
+	KPARSER_ARG_U(16, "tlvs.len.field-off",
 			TLVS_NODE.proto_node.ops.pflen.src_off,
 			0, 0xffff, 1,
 			"relative start offset of this tlv header's len field"),
-	KPARSER_ARG_U(8, "tlvs.len.len",
+	KPARSER_ARG_U(8, "tlvs.len.field-len",
 			TLVS_NODE.proto_node.ops.pflen.size,
 			0, 0xff, 1, "this tlv length field's size in bytes"),
 	KPARSER_ARG_BOOL("tlvs.len.endian",
@@ -835,25 +876,21 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] =
 			0, 0xff, 0, "constant value to be added with extracted"
 			" tlv length to calculate final length "),
 
-	KPARSER_ARG_U(16, "tlvs.type.off",
+	KPARSER_ARG_U(16, "tlvs.type.field-off",
 			TLVS_NODE.proto_node.ops.pftype.src_off, 0, 0xffff, 0,
 			"relative offset to identify the start of the next"
 			" tlv type field"),
+	KPARSER_ARG_U(8, "tlvs.type.field-len",
+			TLVS_NODE.proto_node.ops.pftype.size, 0, 0xff, 1,
+			"size of the next tlv type field"),
 	KPARSER_ARG_U_HEX(16, "tlvs.type.mask",
 			TLVS_NODE.proto_node.ops.pftype.mask, 0,
 			KPARSER_DEFAULT_U16_MASK, 0xff,
 			"mask to extract the next tlv type"),
-	KPARSER_ARG_U(8, "tlvs.type.len",
-			TLVS_NODE.proto_node.ops.pftype.size, 0, 0xff, 1,
-			"size of the next tlv type field"),
 	KPARSER_ARG_U(8, "tlvs.type.rightshift",
 			TLVS_NODE.proto_node.ops.pftype.right_shift, 0, 0xff, 0,
 			"number of bits to shift right to extract the next tlv"
 			" type field"),
-	KPARSER_ARG_U(64, "tlvs.start.off",
-			TLVS_NODE.proto_node.start_offset,
-			0, 0xffffffff, 0, "When there TLVs start relative the"
-			" enapsulating protocol"),
 	KPARSER_ARG_U(8, "tlvs.pad1",
 			TLVS_NODE.proto_node.pad1_val,
 			0, 0xff, 0, "Type value indicating one byte of TLV"
@@ -865,7 +902,7 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] =
 	KPARSER_ARG_BOOL("tlvs.stndfmt",
 			TLVS_NODE.proto_node.tlvsstdfmt, true,
 			"Standard TLV format is applicable"),
-	KPARSER_ARG_U(64, "tlvs.minlen", TLVS_NODE.proto_node.min_len,
+	KPARSER_ARG_U(64, "tlvs.min-hdr-length", TLVS_NODE.proto_node.min_len,
 			0, 0xffffffff, 2, "Minimal length of a TLV option"),
 
 	KPARSER_ARG_S(32, "tlvs.unknowntyperet",
@@ -987,7 +1024,7 @@ static const struct kparser_arg_key_val_token proto_table_key_vals[] =
 		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->
 				table_conf.key.id),
 	},
-	KPARSER_ARG_U(32, "key", table_conf.optional_value1,
+	KPARSER_ARG_U_HEX(32, "key", table_conf.optional_value1,
 			0, 0xffffffff, 0,
 			"<TODO>"),
 	KPARSER_ARG_BOOL("encap", table_conf.optional_value2, false,
@@ -1023,7 +1060,7 @@ static const struct kparser_arg_key_val_token tlv_parse_node_key_vals[] =
 		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->
 				tlv_node_conf.key.id),
 	},
-	KPARSER_ARG_U(64, "minlen", tlv_node_conf.node_proto.min_len,
+	KPARSER_ARG_U(64, "min-hdr-length", tlv_node_conf.node_proto.min_len,
 			0, 0xffffffff, 0,
 			"<TODO>"),
 	KPARSER_ARG_U(64, "maxlen", tlv_node_conf.node_proto.max_len, 0,
@@ -1032,21 +1069,19 @@ static const struct kparser_arg_key_val_token tlv_parse_node_key_vals[] =
 	KPARSER_ARG_BOOL("is_padding", tlv_node_conf.node_proto.is_padding, 
 			false,
 			"<TODO>"),
-	KPARSER_ARG_U(16, "pfoverlay_type_src_off",
+	KPARSER_ARG_U(16, "overlay.type.field.off",
 			tlv_node_conf.node_proto.ops.pfoverlay_type.src_off,
 			0, 0xffff, 0, 
 			"<TODO>"),
-	KPARSER_ARG_U_HEX(16, "pfoverlay_type_mask",
-			tlv_node_conf.node_proto.ops.pfoverlay_type.mask,
-			0, KPARSER_DEFAULT_U16_MASK, KPARSER_DEFAULT_U16_MASK,
-			
-			"<TODO>"),
-	KPARSER_ARG_U(8, "pfoverlay_type_size",
+	KPARSER_ARG_U(8, "overlay.type.field.len",
 			tlv_node_conf.node_proto.ops.pfoverlay_type.size,
 			0, 0xff, 0,
-			
 			"<TODO>"),
-	KPARSER_ARG_U(8, "pfoverlay_type_right_shift",
+	KPARSER_ARG_U_HEX(16, "overlay.type.mask",
+			tlv_node_conf.node_proto.ops.pfoverlay_type.mask,
+			0, KPARSER_DEFAULT_U16_MASK, KPARSER_DEFAULT_U16_MASK,
+			"<TODO>"),
+	KPARSER_ARG_U(8, "overlay.type.field.rightshift",
 			tlv_node_conf.node_proto.ops.
 			pfoverlay_type.right_shift,
 			0, 0xff, 0, 
@@ -1066,7 +1101,7 @@ static const struct kparser_arg_key_val_token tlv_parse_node_key_vals[] =
 			"overlay_wildcard_parse_node-id",
 			tlv_node_conf.overlay_wildcard_parse_node_key,
 			"<TODO>"),
-	KPARSER_ARG_HKEY("metalist", "metalist-id",
+	KPARSER_ARG_HKEY("md.ruleset", "md.ruleset-id",
 			tlv_node_conf.metadata_table_key,
 			"<TODO>"),
 };
@@ -1183,7 +1218,7 @@ flag_field_node_parse_key_vals[] =
 				flag_field_node_conf.key.id),
 	},
 
-	KPARSER_ARG_HKEY("metalist", "metalist-id",
+	KPARSER_ARG_HKEY("md.ruleset", "md.ruleset-id",
 			flag_field_node_conf.metadata_table_key,
 			"Table of parameterized metadata operations"),
 	KPARSER_ARG_HKEY("condexprstable", "condexprstable-id",
@@ -1343,7 +1378,7 @@ do {									\
 static inline int cond_exprs_post_handler(const void *namespace,
 		int op, int argc, int *argidx,
 		const char **argv, const char *hybrid_token,
-		const __u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
+		__u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
 {
 	struct kparser_conf_condexpr *conf = &cmd_arg->cond_conf;
 	const struct kparser_global_namespaces *ns = namespace;
@@ -1374,7 +1409,7 @@ kparser_arg_namespace_cond_exprs =
 static inline int cond_table_post_handler(const void *namespace,
 		int op, int argc, int *argidx,
 		const char **argv, const char *hybrid_token,
-		const __u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
+		__u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
 {
 	struct kparser_conf_table *conf = &cmd_arg->table_conf;
 
@@ -1395,7 +1430,7 @@ kparser_arg_namespace_cond_exprs_table =
 static inline int cond_tables_post_handler(const void *namespace,
 		int op, int argc, int *argidx,
 		const char **argv, const char *hybrid_token,
-		const __u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
+		__u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
 {
 	struct kparser_conf_table *conf = &cmd_arg->table_conf;
 
@@ -1416,7 +1451,7 @@ kparser_arg_namespace_cond_exprs_tables =
 static inline int counter_post_handler(const void *namespace,
 		int op, int argc, int *argidx,
 		const char **argv, const char *hybrid_token,
-		const __u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
+		__u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
 {
 	struct kparser_conf_cntr *conf = &cmd_arg->cntr_conf;
 
@@ -1435,16 +1470,27 @@ kparser_arg_namespace_counter =
 
 static const struct kparser_global_namespaces kparser_arg_namespace_metadata =
 {
-	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_METADATA, "metadata", md_key_vals,
+	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_METADATA, "metadata-rule",
+			md_key_vals,
 			"metadata object", NULL, NULL),
 };
 
 static const struct kparser_global_namespaces kparser_arg_namespace_metalist =
 {
 	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_METALIST,
-			"metalist", mdl_key_vals,
+			"metadata-ruleset", mdl_key_vals,
 			"list of metadata object(s)", NULL, NULL),
 };
+
+static inline int node_do_cli_metalist(int nsid,
+		int op, int argc, int *argidx,
+		const char **argv, const char *hybrid_token,
+		const char *tbn, __u16 tbid, char *autogenname);
+
+static inline int node_do_cli_table(int nsid,
+		int op, int argc, int *argidx,
+		const char **argv, const char *hybrid_token,
+		const char *tbn, __u16 tbid, char *autogenname);
 
 static inline int node_do_cli(int nsid,
 		int op, int argc, int *argidx,
@@ -1452,50 +1498,66 @@ static inline int node_do_cli(int nsid,
 		const char *tbn, __u16 tbid)
 {
 	const char *newargv[KPARSER_CONFIG_MAX_KEYS] = {};
-	char autoflagname[KPARSER_MAX_NAME];
-	int currargidx, i, rc, j;
+	char autogenname[KPARSER_MAX_NAME] = {};
+	bool undesired_arg_enforce = true;
+	int currargidx, i = 0, rc;
 
-	currargidx = check_key(argc, argv, "flagstable");
-	if ((currargidx == -1) || (op != op_create))
-		return do_cli(nsid, op, argc, argidx, argv,
-				hybrid_token, true, true);
+	for (i = 0; i < argc; i++)
+		newargv[i] = strdupa(argv[i]);
 
-	for (i = 0; i < currargidx; i++)
-		newargv[i] = strdup(argv[i]);
-	newargv[i++] = strdup("flagsfieldstable");
-	newargv[i] = strdup(argv[i]);
-	snprintf(autoflagname, sizeof(autoflagname), "flagstable.%s",
-			argv[i++]);
-	newargv[i++] = strdup("flagsfieldsprototable");
-	newargv[i++] = strdup(autoflagname);
-	for (j = currargidx+2; j < argc; j++)
-		newargv[i++] = strdup(argv[j]);
+	if (op != op_create)
+		goto skip_inline_do_clis;
 
-#if 0
-	printf("\n[");
-	for (j = 0; j < i; j++) {
-		printf("%s ", newargv[j]);	
-	}
-	printf("]\n");
-#endif
-
-	rc = do_cli(nsid, op, i, argidx,
-			(const char **) &newargv, hybrid_token, true, true);
+	rc = node_do_cli_metalist(nsid, op, argc, argidx,
+			(const char **) &newargv,
+			hybrid_token, tbn, tbid, autogenname);
 	if (rc != 0) {
-		fprintf(stderr, "do_cli() nsid:%d rc:%d\n", nsid, rc);
+		fprintf(stderr, "node_do_cli_metalist() failed, rc:%d\n", rc);
+		return rc;
 	}
 
-	for (i = 0; i < (sizeof (newargv) / sizeof (newargv[0])); i++)
-		if (newargv[i])
-			free((void *) newargv[i]);
+	if (strlen(autogenname) != 0) {
+		undesired_arg_enforce = false;
+		newargv[argc++] = strdupa("md.ruleset");
+		newargv[argc++] = strdupa(autogenname);
+	}
 
-	return rc;
+	autogenname[0] = '\0';
+	rc = node_do_cli_table(nsid, op, argc, argidx,
+			(const char **) &newargv,
+			hybrid_token, tbn, tbid, autogenname);
+	if (rc != 0) {
+		fprintf(stderr, "node_do_cli_table() failed, rc:%d\n", rc);
+		return rc;
+	}
+	if (strlen(autogenname) != 0) {
+		undesired_arg_enforce = false;
+		newargv[argc++] = strdupa("nxt.table");
+		newargv[argc++] = strdupa(autogenname);
+	}
+
+	currargidx = check_key(argc, newargv, "flagstable");
+	if (currargidx != -1) {
+		undesired_arg_enforce = false;
+		newargv[currargidx] = strdupa("flagsfieldstable");
+		snprintf(autogenname, sizeof(autogenname), "flagstable.%s",
+				newargv[currargidx + 1]);
+		newargv[argc++] = strdupa("flagsfieldsprototable");
+		newargv[argc++] = strdupa(autogenname);
+#if 1
+		dump_inline_expanded_cli_cmd(argc, newargv);
+#endif
+	}
+
+skip_inline_do_clis:
+	return do_cli(nsid, op, argc, argidx, (const char **) &newargv,
+				hybrid_token, true, undesired_arg_enforce);
 }
 
 static inline int node_post_handler(const void *namespace,
 		int op, int argc, int *argidx,
 		const char **argv, const char *hybrid_token,
-		const __u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
+		__u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
 {
 	struct kparser_conf_node *conf = &cmd_arg->node_conf;
 	bool tlvsset = false, flagsset = false, isset = false;
@@ -1511,8 +1573,8 @@ static inline int node_post_handler(const void *namespace,
 			flagsset = true;
 	}
 
-	K2IDX("hdrlenoff", kidxstart);
-	K2IDX("hdrlenaddvalue", kidxend);
+	K2IDX(HDR_LEN_FIELD_OFF_KEY, kidxstart);
+	K2IDX(HDR_LEN_ADDVAL_KEY, kidxend);
 	for (i = kidxstart; i <= kidxend; i++)
 		if (!kparsertestbit(ns_keys_bvs, i)) {
 			conf->plain_parse_node.proto_node.ops.
@@ -1520,19 +1582,65 @@ static inline int node_post_handler(const void *namespace,
 			break;
 		}
 
-	/* If hdrlenlen is set and hdrlenmask is set and hdrlenrightshift is
-	 * not set, the try to auto calculate it.
+	/* If HDR_LEN_MASK_KEY is set and HDR_LEN_FIELD_LEN_KEY is not set,
+	 * auto calculate the HDR_LEN_FIELD_LEN_KEY from HDR_LEN_MASK_KEY value
 	 */
-	K2IDX("hdrlenlen", kidx);
+	if (conf->plain_parse_node.proto_node.ops.len_parameterized) {
+		K2IDX(HDR_LEN_FIELD_LEN_KEY, kidx);
+		if (kparsertestbit(ns_keys_bvs, kidx)) {
+			K2IDX(HDR_LEN_MASK_KEY, kidx);
+			if (kparsertestbit(ns_keys_bvs, kidx)) {
+				// config error
+				fprintf(stderr, "Either specify key"
+						" `%s` or key `%s`\n",
+						HDR_LEN_FIELD_LEN_KEY,
+						HDR_LEN_MASK_KEY);
+				return EINVAL;
+			} else {
+				/* calculate HDR_LEN_FIELD_LEN_KEY from
+				 * HDR_LEN_MASK_KEY
+				 * Max: 4 bytes
+				 */
+				if (conf->plain_parse_node.proto_node.ops.
+						pflen.mask <= 0xff)
+					conf->plain_parse_node.proto_node.ops.
+						pflen.size = 1;
+				else if (conf->plain_parse_node.proto_node.ops.
+						pflen.mask > 0xff &&
+					conf->plain_parse_node.proto_node.ops.
+					pflen.mask <= 0xffff)
+					conf->plain_parse_node.proto_node.ops.
+						pflen.size = 2;
+				else if (conf->plain_parse_node.proto_node.ops.
+						pflen.mask > 0xffff &&
+					conf->plain_parse_node.proto_node.ops.
+					pflen.mask <= 0xffffff)
+					conf->plain_parse_node.proto_node.ops.
+						pflen.size = 3;
+				else
+					conf->plain_parse_node.proto_node.ops.
+						pflen.size = 4;
+				// mention this field is set automatically
+				K2IDX(HDR_LEN_FIELD_LEN_KEY, kidx);
+				kparserclearbit(ns_keys_bvs, kidx);
+			}
+		}
+	}
+
+	/* If HDR_LEN_FIELD_LEN_KEY is set and HDR_LEN_MASK_KEY is set and
+	 * HDR_LEN_RSHIFT_KEY is not set, the try to auto calculate it.
+	 */
+	K2IDX(HDR_LEN_FIELD_LEN_KEY, kidx);
 	if (!kparsertestbit(ns_keys_bvs, kidx)) {
-		K2IDX("hdrlenmask", kidx);
+		K2IDX(HDR_LEN_MASK_KEY, kidx);
 		if (conf->plain_parse_node.proto_node.ops.pflen.size >
 				sizeof(conf->plain_parse_node.proto_node.ops.
 					pflen.mask)) {
-			fprintf(stderr, "hdrlenlen: %u bytes, it can not be "
-				"more than capacity of hdrlenmask: %lu bytes\n",
+			fprintf(stderr, "%s: %u bytes, it can not be "
+				"more than capacity of %s: %lu bytes\n",
+				HDR_LEN_FIELD_LEN_KEY,
 				conf->plain_parse_node.proto_node.ops.
-				pflen.size,
+				pflen.size, HDR_LEN_MASK_KEY,
 				sizeof(conf->plain_parse_node.proto_node.ops.
 				pflen.mask));
 			return EINVAL;
@@ -1544,8 +1652,9 @@ static inline int node_post_handler(const void *namespace,
 				pflen.size, &rightshiftneeded);
 
 		if (!kparsertestbit(ns_keys_bvs, kidx)) {
-			K2IDX("hdrlenrightshift", kidx);
-			if (kparsertestbit(ns_keys_bvs, kidx) && rightshiftneeded) {
+			K2IDX("HDR_LEN_RSHIFT_KEY", kidx);
+			if (kparsertestbit(ns_keys_bvs, kidx) &&
+					rightshiftneeded) {
 				conf->plain_parse_node.proto_node.ops.
 					pflen.right_shift = cnt;
 			}
@@ -1621,9 +1730,9 @@ static inline int node_post_handler(const void *namespace,
 
 		/* if start_offset is set, set fixed_start_offset
 		 * if ops.pfstart_offset is not set and start_offset is also not
-		 * set, then try to set the minlen to start_offset and set 
-		 * fixed_start_offset. In this case, if minlen is also not set,
-		 * then throw an error
+		 * set, then try to set the min-hdr-length to start_offset and
+		 * set fixed_start_offset. In this case, if min-hdr-length is
+		 * also not set, then throw an error
 		 */
 		K2IDX("tlvs.startoff", kidx);
 		if (!kparsertestbit(ns_keys_bvs, kidx)) {
@@ -1641,14 +1750,14 @@ static inline int node_post_handler(const void *namespace,
 				}
 			}
 			if (!isset) {
-				K2IDX("minlen", kidx);
+				K2IDX("min-hdr-length", kidx);
 				if (kparsertestbit(ns_keys_bvs, kidx)) {
-					// but minlen is also not set
+					// but min-hdr-length is also not set
 					fprintf(stderr,
 						"if keys from `tlvhdrlenoff`"
 						" to `tlvhdrlenaddvalue` are"
-						" not set, then `minlen` must"
-						" be set");
+						" not set,then `min-hdr-length`"
+						" must be set");
 					return EINVAL;
 				}
 				conf->tlvs_parse_node.proto_node.start_offset =
@@ -1693,16 +1802,17 @@ static inline int node_post_handler(const void *namespace,
 					ops.start_fields_offset_parameterized) {
 				/* key flagsfieldhdrlen is not set
 				 * and no member of pfstart_fields_offset is
-				 * set. So set ops.hdr_length to minlen
-				 * If minlen is not provided, then EINVAL
+				 * set. So set ops.hdr_length to min-hdr-length 
+				 * If min-hdr-length is not provided, then
+				 * EINVAL
 				 */
-				K2IDX("minlen", kidx);
+				K2IDX("min-hdr-length", kidx);
 				if (kparsertestbit(ns_keys_bvs, kidx)) {
-					// but minlen is also not set
+					// but min-hdr-length is also not set
 					fprintf(stderr, "key `flagsfieldhdrlen`"
 							" must be set in case"
-							" key `minlen` is not"
-							" set\n");
+							" key `min-hdr-length`"
+							" is not set\n");
 					return EINVAL;
 				}
 				conf->flag_fields_parse_node.proto_node.ops.
@@ -1747,7 +1857,7 @@ kparser_arg_namespace_parse_node =
 static inline int proto_table_post_handler(const void *namespace,
 		int op, int argc, int *argidx,
 		const char **argv, const char *hybrid_token,
-		const __u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
+		__u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
 {
 	struct kparser_conf_table *conf = &cmd_arg->table_conf;
 
@@ -1776,7 +1886,7 @@ kparser_arg_namespace_tlv_parse_node =
 static inline int tlv_table_post_handler(const void *namespace,
 		int op, int argc, int *argidx,
 		const char **argv, const char *hybrid_token,
-		const __u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
+		__u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
 {
 	struct kparser_conf_table *conf = &cmd_arg->table_conf;
 
@@ -1796,7 +1906,7 @@ kparser_arg_namespace_tlv_proto_table =
 static inline int flag_post_handler(const void *namespace,
 		int op, int argc, int *argidx,
 		const char **argv, const char *hybrid_token,
-		const __u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
+		__u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
 {
 	struct kparser_conf_flag_field *conf = &cmd_arg->flag_field_conf;
 
@@ -1821,7 +1931,7 @@ static inline int flagfields_do_cli(int nsid,
 static inline int flagfields_post_handler(const void *namespace,
 		int op, int argc, int *argidx,
 		const char **argv, const char *hybrid_token,
-		const __u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
+		__u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
 {
 	struct kparser_conf_table *conf = &cmd_arg->table_conf;
 
@@ -1851,7 +1961,7 @@ kparser_arg_namespace_flag_field_node_parse =
 static inline int flags_proto_table_post_handler(const void *namespace,
 		int op, int argc, int *argidx,
 		const char **argv, const char *hybrid_token,
-		const __u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
+		__u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg)
 {
 	struct kparser_conf_table *conf = &cmd_arg->table_conf;
 
@@ -1921,6 +2031,137 @@ const struct kparser_global_namespaces *g_namespaces[] =
 	[KPARSER_NS_MAX] = NULL,
 };
 
+static inline int node_do_cli_table(int nsid,
+		int op, int argc, int *argidx,
+		const char **argv, const char *hybrid_token,
+		const char *tbn, __u16 tbid, char *autogenname)
+{
+	const char *newargv[KPARSER_CONFIG_MAX_KEYS] = {};
+	int currargidx, i, rc, j;
+	const char *tk;
+	char tname[KPARSER_MAX_NAME];
+
+	if (op != op_create)
+		return 0;
+
+	currargidx = check_key(argc, argv, "nxt.tableent");
+	if (currargidx == -1)
+		return 0;
+
+	if (check_key(argc, argv, "nxt.table") != -1) {
+		/* in case inline nxt.tableent is configured, nxt.table can
+		 * not be specified here.
+		 */
+		fprintf(stderr, "key `nxt.tableent` can not be used"
+			" with key `nxt.table` for parse node config cmd.\n");
+		return EINVAL;
+	}
+
+	// create an empty proto table with autogen name first
+	// i.e. table.auto.<objname>
+	currargidx = check_key(argc, argv, "name");
+	sprintf(autogenname, "__table.auto.%s", argv[currargidx+1]);
+
+	i = 0;
+	newargv[i++] = strdupa(argv[0]);
+	newargv[i++] = strdupa(g_namespaces[KPARSER_NS_PROTO_TABLE]->name);
+	newargv[i++] = strdupa("name");
+	newargv[i++] = strdupa(autogenname);
+#if 1
+	dump_inline_expanded_cli_cmd(i, newargv);
+#endif
+	rc = do_cli(KPARSER_NS_PROTO_TABLE, op, i, argidx,
+			(const char **) &newargv, NULL, true, true);
+	if (rc != 0) {
+		fprintf(stderr, "do_cli() inline table failed, rc:%d\n", rc);
+		return rc;
+	}
+
+	j = 0;
+	while (1) {
+		currargidx = check_key_idx(argc, j, argv, "nxt.tableent");
+		if (currargidx == -1)
+			break;
+		j = currargidx + 2;
+		i = 0;
+		newargv[i++] = strdupa(argv[0]);
+		sprintf(tname, "%s/%s",
+				g_namespaces[KPARSER_NS_PROTO_TABLE]->name,
+				autogenname);
+		newargv[i++] = strdupa(tname);
+		tk = strchr(argv[currargidx+1], ':');
+		tk--;
+		newargv[i++] = strdupa("key");
+		newargv[i++] = strndupa(argv[currargidx+1],
+				tk - argv[currargidx+1] + 1);
+		tk += 2;
+		newargv[i++] = strdupa("node");
+		newargv[i++] = strndupa(tk, strlen(tk));
+#if 1
+		dump_inline_expanded_cli_cmd(i, newargv);
+#endif
+		rc = do_cli(KPARSER_NS_PROTO_TABLE, op, i, argidx,
+				(const char **) &newargv, newargv[1],
+				true, true);
+		if (rc != 0)
+			break;
+	}
+
+	return rc;
+}
+
+static inline int node_do_cli_metalist(int nsid,
+		int op, int argc, int *argidx,
+		const char **argv, const char *hybrid_token,
+		const char *tbn, __u16 tbid, char *autogenname)
+{
+	const char *newargv[KPARSER_CONFIG_MAX_KEYS] = {};
+	int currargidx, i = 0, rc;
+
+	if (op != op_create)
+		return 0;
+
+	currargidx = check_key(argc, argv, "md.rule");
+	if (currargidx == -1) {
+		currargidx = check_key(argc, argv, "md.rule-id");
+		if (currargidx == -1)
+			return 0;
+	}
+
+	if ((check_key(argc, argv, "md.ruleset") != -1) || (check_key(argc,
+					argv, "md.ruleset-id") != -1)) {
+		/* in case inline md.rule is configured, md.ruleset can not be
+		 * specified here.
+		 */
+		fprintf(stderr, "key `md.ruleset`\\`md.ruleset-id` can not be"
+			" used with key `md.rule` for parse node config cmd.\n");
+		return EINVAL;
+	}
+	// autogen md.ruleset name, i.e. mdl.auto.<objname>	
+	currargidx = check_key(argc, argv, "name");
+	sprintf(autogenname, "mdl.auto.%s", argv[currargidx+1]);
+
+	newargv[i++] = strdup(argv[0]);
+	newargv[i++] = strdup(g_namespaces[KPARSER_NS_METALIST]->name);
+	newargv[i++] = strdup("name");
+	newargv[i++] = strdup(autogenname);
+
+	for (; i < argc; i++)
+		newargv[i] = strdup(argv[i]);
+
+#if 1
+	dump_inline_expanded_cli_cmd(argc, newargv);
+#endif
+
+	rc = do_cli(KPARSER_NS_METALIST, op, argc, argidx,
+			(const char **) &newargv, hybrid_token, true, false);
+
+	for (i = 0; i < argc; i++)
+		free((void *) newargv[i]);
+
+	return rc;
+}
+
 static inline int flagfields_do_cli(int nsid,
 		int op, int argc, int *argidx,
 		const char **argv, const char *hybrid_token,
@@ -1988,11 +2229,8 @@ static inline int flagfields_do_cli(int nsid,
 		newargv[3] = strdup(autoflagname);
 	}
 
-#if 0
-	printf("\n[");
-	for (i = 0; i < newargc; i++)
-		printf("%s ", newargv[i]);	
-	printf("]\n");
+#if 1
+	dump_inline_expanded_cli_cmd(newargc, newargv);
 #endif
 
 	rc = do_cli(KPARSER_NS_FLAG_FIELD, op, newargc, argidx,
@@ -2008,11 +2246,11 @@ static inline int flagfields_do_cli(int nsid,
 	}
 
 	/* Now expect all the params needed to
-	 * 	2. create a flagsnode if metalist.name/metalist.id
+	 * 	2. create a flagsnode if md.ruleset/md.ruleset-id
 		   or both/flagsnode.name/flagsnode.id is present.
 	 *	   If flagsnode.name/flagsnode.id not present, autogen the name.
 	 * 	   by prepending "flagsnode." to flagfields name. 
-	 *	   e.g. create flagsnode name flagsnode.gre metalist.name
+	 *	   e.g. create flagsnode name flagsnode.gre md.ruleset 
 	 *		ml.gre.seqno
 	 *	3. if above case is true, create a flagstable with that node
 	 * 	   e.g. create flagstable name flagstable.gre
@@ -2022,11 +2260,11 @@ static inline int flagfields_do_cli(int nsid,
 	 */
 	flagname = NULL;
 	flagid = NULL;
-	currargidx = check_key(argc, argv, "metalist");
+	currargidx = check_key(argc, argv, "md.ruleset");
 	if (currargidx != -1)
 		flagname = argv[currargidx+1];
 	else {
-		currargidx = check_key(argc, argv, "metalist-id");
+		currargidx = check_key(argc, argv, "md.ruleset-id");
 		if (currargidx != -1)
 			flagid = argv[currargidx+1];
 	}
@@ -2063,11 +2301,8 @@ static inline int flagfields_do_cli(int nsid,
 
 	flagsnodename = strdup(newargv[3]);
 
-#if 0
-	printf("\n[");
-	for (i = 0; i < newargc; i++)
-		printf("%s ", newargv[i]);	
-	printf("]\n");
+#if 1
+	dump_inline_expanded_cli_cmd(newargc, newargv);
 #endif
 
 	rc = do_cli(KPARSER_NS_FLAG_FIELD_NODE_PARSE, op, newargc, argidx,
@@ -2105,11 +2340,8 @@ static inline int flagfields_do_cli(int nsid,
 
 	newargc = 4;
 
-#if 0
-	printf("\n[");
-	for (i = 0; i < newargc; i++)
-		printf("%s ", newargv[i]);	
-	printf("]\n");
+#if 1
+	dump_inline_expanded_cli_cmd(newargc, newargv);
 #endif
 
 	rc = do_cli(KPARSER_NS_FLAG_FIELD_PROTO_TABLE, op, newargc, argidx,
@@ -2135,11 +2367,8 @@ static inline int flagfields_do_cli(int nsid,
 	newargc = 7;
 	newhybrid_token = newargv[2];
 
-#if 0
-	printf("\n[");
-	for (i = 0; i < newargc; i++)
-		printf("%s ", newargv[i]);	
-	printf("]\n");
+#if 1
+	dump_inline_expanded_cli_cmd(newargc, newargv);
 	printf("newhybrid_token: %s\n", newhybrid_token);
 #endif
 

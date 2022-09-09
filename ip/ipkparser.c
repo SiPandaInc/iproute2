@@ -36,6 +36,8 @@ struct kparser_cliflags {
 	const char *help;
 };
 
+static int kmod_op_error = 0;
+
 static struct kparser_cliflags cliflags[] = {
 	{
 		.flagname = "-reportnoindent",
@@ -221,6 +223,7 @@ static void dump_an_obj(const struct kparser_global_namespaces *namespace,
 
 	sprintf(objnamebuf, "objidx:%d", objsreportedcount);
 
+	open_json_object(NULL);
 	open_json_object(objnamebuf);
 	open_json_object(namespace->name);
 
@@ -230,8 +233,10 @@ static void dump_an_obj(const struct kparser_global_namespaces *namespace,
 					conf_keys_bv.ns_keys_bvs, i))
 			continue;
 		curr_arg = &namespace->arg_tokens[i];
+		/*
 		if (curr_arg->dontreport)
 			continue;
+		*/
 		kname = curr_arg->key_name;
 		w_offset = curr_arg->w_offset;
 		w_len = curr_arg->w_len;
@@ -250,11 +255,20 @@ static void dump_an_obj(const struct kparser_global_namespaces *namespace,
 
 		if (objsreportedcount && !(cliflag &
 					KPARSER_CLI_FLAG_READ_DEEP_REPORT)) {
+#if 0
+			/* for aux objects, dump only element id nodes, i.e.
+			 * for `name ` and/or `id`
+			 */
+			if (!curr_arg->id || !strcmp(kname, "name") ||
+					!strcmp(kname, "id"))
+				continue;
+#else
 			/* for aux objects, dump only id nodes, i.e.
 			 * for `name ` and/or `id`
 			 */
 			if (!curr_arg->id)
 				continue;
+#endif
 		}
 
 		print_id = curr_arg->print_id;
@@ -370,6 +384,7 @@ static void dump_an_obj(const struct kparser_global_namespaces *namespace,
 	keynamestack_pop(-1);
 	close_json_object();
 	close_json_object();
+	close_json_object();
 	objsreportedcount++;
 }
 
@@ -430,6 +445,7 @@ static void dump_cmd_rsp(const struct kparser_global_namespaces *namespace,
 	}
 
 	if (objsreportedcount == 0) {
+		open_json_object(NULL);
 		open_json_object("cliparams");
 		open_json_array(PRINT_JSON, "flags");
 		for (i = 0; i < (sizeof(cliflags) / sizeof(cliflags[0])); i++)
@@ -438,27 +454,33 @@ static void dump_cmd_rsp(const struct kparser_global_namespaces *namespace,
 						cliflags[i].flagname);
 		close_json_array(PRINT_JSON, NULL);
 		close_json_object();
+		close_json_object();
 	}
-
 
 	open_json_object(NULL);
 	open_json_object("execsummary");
-	print_hex(PRINT_ANY, "opretcode", "%d", rsp->op_ret_code);
-	print_string(PRINT_ANY, "opdesc", "%s", (char *) rsp->err_str_buf);
-	print_hex(PRINT_ANY, "objectscounttotal", "%d", rsp->objects_len + 1);
+	print_0xhex(PRINT_ANY, "opretcode", "", rsp->op_ret_code);
+	print_string(PRINT_ANY, "opdesc", "", (char *) rsp->err_str_buf);
+	if (rsp->op_ret_code == 0)
+		print_hex(PRINT_ANY, "objectscounttotal", "%d",
+				rsp->objects_len + 1);
+	else
+		print_hex(PRINT_ANY, "objectscounttotal", "%d",
+				rsp->objects_len);
 	close_json_object();
 	close_json_object();
 
 	(*cmd_rsp_size) = (*cmd_rsp_size) - sizeof(*rsp);
 
+	kmod_op_error = rsp->op_ret_code;
 	if (rsp->op_ret_code == 0) {
-		// fprintf(stdout, "rsp:obj dump starts\n");
 		dump_an_obj(namespace, &rsp->object);
 		if (rsp->objects_len) {
-			open_json_array(PRINT_JSON,
-					"list/table");
+			open_json_object(NULL);
+			open_json_array(PRINT_JSON, "ents");
 			dump_cmd_rsp_object(rsp, cmd_rsp_size);
 			close_json_array(PRINT_JSON, NULL);
+			close_json_object();
 		}
 	}
 	// fprintf(stdout, "rsp:obj dump ends\n");
@@ -920,6 +942,7 @@ int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
 				memcpy(((void *) cmd_arg) + w_offset, tbn,
 						strlen(tbn) + 1);
 				INCOMPATIBLE_KEY_CHECK;
+				kparserclearbit(ns_keys_bvs, i);
 			} else {
 				if (curr_arg->default_val &&
 						curr_arg->default_val_size) {
@@ -938,6 +961,7 @@ int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
 				memcpy(((void *) cmd_arg) + w_offset, &tbid,
 						w_len);
 				INCOMPATIBLE_KEY_CHECK;
+				kparserclearbit(ns_keys_bvs, i);
 			} else
 				memcpy(((void *) cmd_arg) + w_offset,
 						&curr_arg->def_value, w_len);
@@ -1318,6 +1342,9 @@ out:
 	if (cmd_rsp)
 		free(cmd_rsp);
 
+	if (kmod_op_error)
+		return -kmod_op_error;
+
 	return rc;
 }
 
@@ -1431,6 +1458,21 @@ static const char *arg_val_type_str[] =
 	[KPARSER_ARG_VAL_INVALID] = "end of valid values"
 };
 
+#define PRINT_HELP_INTRO()						\
+do {									\
+	fprintf(stream,							\
+	"Usage: \"%s parser [ operations ] [ objects ] [ args ]"	\
+	" [-flags]\"\n"							\
+	"More help 1: \"%s parser help operations\"\n"			\
+	"More help 2: \"%s parser help objects\"\n"			\
+	"More help 3: \"%s parser help objects <objname>\"\n"		\
+	"More help 4: \"%s parser help objects <objname> <keyname>\"\n"	\
+	"More help 5: \"%s parser help args\"\n"			\
+	"More help 6: \"%s parser help flags\"\n",			\
+	progname, progname, progname, progname, progname,		\
+	progname, progname);						\
+} while(0)
+
 static void usage_text(FILE *stream, bool intro, int argc, int *argidx,
 		char **argv, bool dump_ops, bool dump_objects)
 {
@@ -1446,19 +1488,23 @@ static void usage_text(FILE *stream, bool intro, int argc, int *argidx,
 		goto label_dump_objects;
 
 	if (intro)
-		fprintf(stream,
-		"Usage: \"%s parser [-flags] [ operations ] [ objects ] [ args ]\"\n"
-		"More help 1: \"%s parser help operations\"\n"
-		"More help 2: \"%s parser help objects\"\n"
-		"More help 3: \"%s parser help objects <objname>\"\n"
-		"More help 4: \"%s parser help objects <objname> <keyname>\"\n"
-		"More help 5: \"%s parser help args\"\n"
-		"NOTE: use `%s -j -p` flags in CLI for formatted JSON output\n",
-		progname, progname, progname, progname, progname,
-		progname, progname);
+		PRINT_HELP_INTRO();
 
 	if (!argc || !argidx || !argv) {
 		// fprintf(stream, "type `help` for more details on usage\n");
+		return;
+	}
+
+	if ((argc && argidx && (*argidx <= (argc - 1)) && argv &&
+		argv[*argidx] && (keymatches(argv[*argidx], "flags") ==
+			0)) || argc == 0) {
+		fprintf(stream, "flags := {");
+		for (i = 0; i < sizeof(cliflags) / sizeof(cliflags[0]); i++) {
+			if (i == (sizeof(cliflags) / sizeof(cliflags[0]) - 1))
+				fprintf(stream, "%s}\n", cliflags[i].flagname);
+			else
+				fprintf(stream, "%s | ", cliflags[i].flagname);
+		}
 		return;
 	}
 
@@ -1631,17 +1677,28 @@ static void usage_json(FILE *stream, bool intro, int argc, int *argidx,
 		goto label_dump_objects;
 
 	if (intro)
-		fprintf(stream,
-		"Usage: \"%s parser [ operations ] [ objects ] [ args ]\"\n"
-		"More help 1: \"%s parser help operations\"\n"
-		"More help 2: \"%s parser help objects\"\n"
-		"More help 3: \"%s parser help objects <objname>\"\n"
-		"More help 4: \"%s parser help objects <objname> <keyname>\"\n"
-		"More help 5: \"%s parser help args\"\n",
-		progname, progname, progname, progname, progname, progname);
+		PRINT_HELP_INTRO();
 
 	if (!argc || !argidx || !argv) {
 		// fprintf(stream, "type `help` for more details on usage\n");
+		return;
+	}
+
+	if ((argc && argidx && (*argidx <= (argc - 1)) && argv &&
+		argv[*argidx] && (keymatches(argv[*argidx], "flags") ==
+			0)) || argc == 0) {
+		new_json_obj(json);
+		open_json_object(NULL);
+		open_json_object("flags");
+		for (i = 0; i < sizeof(cliflags) / sizeof(cliflags[0]); i++) {
+			open_json_object(cliflags[i].flagname);
+			print_string(PRINT_ANY, "Description",
+					"%s", cliflags[i].help);
+			close_json_object();
+		}
+		close_json_object();
+		close_json_object();
+		delete_json_obj();
 		return;
 	}
 
@@ -1740,14 +1797,14 @@ print_args:
 					continue;
 				open_json_object(arg_name);
 
-				print_string(PRINT_ANY, "type", "",
+				print_string(PRINT_ANY, "Type", "",
 						arg_val_type_str[token->type]);
-				print_uint(PRINT_ANY, "mandatory", "",
+				print_uint(PRINT_ANY, "Mandatory", "",
 						token->mandatory);
-				print_string(PRINT_ANY, "description", "",
+				print_string(PRINT_ANY, "Description", "",
 						token->help_msg);
 				open_json_array(PRINT_JSON,
-						"incompatible_keys");
+						"Incompatible_keys");
 				for (k = 0; k < sizeof(token->
 					incompatible_keys) / sizeof(token->
 						incompatible_keys[0]); k++) {
@@ -1760,23 +1817,23 @@ print_args:
 				switch(token->type) {
 				case KPARSER_ARG_VAL_STR:
 					if (token->default_val)
-					print_string(PRINT_ANY, "default", "",
+					print_string(PRINT_ANY, "Default", "",
 							token->default_val);
 					else
-					print_string(PRINT_ANY, "default", "",
+					print_string(PRINT_ANY, "Default", "",
 							empty);
-					print_uint(PRINT_ANY, "maxlen", "",
+					print_uint(PRINT_ANY, "Maxlen", "",
 							token->str_arg_len_max);
 					break;
 				case KPARSER_ARG_VAL_U8:
 				case KPARSER_ARG_VAL_U16:
 				case KPARSER_ARG_VAL_U32:
 				case KPARSER_ARG_VAL_U64:
-					print_uint(PRINT_ANY, "min", "",
+					print_uint(PRINT_ANY, "Min", "",
 							token->min_value);
-					print_uint(PRINT_ANY, "default", "",
+					print_uint(PRINT_ANY, "Default", "",
 							token->def_value);
-					print_uint(PRINT_ANY, "max", "",
+					print_uint(PRINT_ANY, "Max", "",
 							token->max_value);
 					break;
 				case KPARSER_ARG_VAL_SET:
@@ -1795,7 +1852,7 @@ print_args:
 							set_value_str;
 					}
 					close_json_array(PRINT_JSON, NULL);
-					print_string(PRINT_ANY, "default", "",
+					print_string(PRINT_ANY, "Default", "",
 							default_set_value);
 					break;
 				case KPARSER_ARG_VAL_BOOL:

@@ -72,7 +72,7 @@ typedef int kparser_ns_arg_post_handler(
 		const void *ns,
 		int op, int argc, int *argidx,
 		const char **argv, const char *hybrid_token,
-		const __u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg);
+		__u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg);
 
 struct kparser_global_namespaces {
 	enum kparser_global_namespace_ids name_space_id;
