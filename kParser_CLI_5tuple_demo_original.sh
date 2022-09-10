@@ -3,7 +3,7 @@
 # This is a sample demo script which creates a kParser instance named
 # "test_parser" for parsing bit offsets for five tuples of TCP-IP header,
 # i.e. ipproto, ipv4 source address, ipv4 destination address, tcp source port,
-# tcp destination port.
+# tcp destination port. UDP ports were added later.
 
 die()
 {
@@ -33,7 +33,7 @@ ipcmd parser create table name table.ether
 # from packet and store in the user provided metadata buffer.
 # `type bit_offset` specifies the operation type of this metadata is to derive
 # the offset of the bit field from the packet.
-# `doff 0` means the derived data will be written at byte destination offset 0
+# `md-off 0` means the derived data will be written at byte destination offset 0
 # in the user provided metadata buffer.
 # `addoff 72` specifies the bit offset of the ipproto field relative to the
 # beginning of the IPv4 header.
@@ -41,57 +41,75 @@ ipcmd parser create table name table.ether
 # user specified metadata buffer.
 # Value written to metadata buffer will be absolute bit offset of IPv4 header +
 # addoff.
-ipcmd parser create metadata name md.ipproto_offset			\
+ipcmd parser create metadata-rule name md.ipv4.ttl			\
 		type bit_offset						\
-		doff 0							\
+		md-off 0						\
+		addoff 64
+
+ipcmd parser create metadata-rule name md.ipv4.ipproto_offset		\
+		type bit_offset						\
+		md-off 2						\
 		addoff 72
 
-# This is a metadata extraction rule to derive the bit offset of source IPv4
-# address.
-ipcmd parser create metadata name md.src_address_offset			\
+ipcmd parser create metadata-rule name md.ipv4.src_address_offset	\
 		type bit_offset						\
 		addoff 96						\
-		doff 2
+		md-off 4
 
-# This is a metadata extraction rule to derive the bit offset of destination
-# IPv4 address.
-ipcmd parser create metadata name md.dst_address_offset			\
+ipcmd parser create metadata-rule name md.ipv4.dst_address_offset	\
 		type bit_offset						\
 		addoff 128						\
-		doff 4
+		md-off 6
 
-# This is a metadata extraction rule to derive the bit offset of source TCP port
-# `addoff 0` specifies the bit offset of the TCP source port relative to the
-# beginning of the TCP header.
-ipcmd parser create metadata name md.tcp.src_port			\
+ipcmd parser create metadata-rule name md.tcp.src_port			\
 		type bit_offset						\
 		addoff 0						\
-		doff 6
+		md-off 8
 
-# This is a metadata extraction rule to derive the bit offset of destination
-# TCP port.
-ipcmd parser create metadata name md.tcp.dst_port			\
+ipcmd parser create metadata-rule name md.tcp.dst_port			\
 		type bit_offset						\
 		addoff 16						\
-		doff 8
+		md-off 10
+
+ipcmd parser create metadata-rule name md.udp.src_port			\
+		type bit_offset						\
+		addoff 0						\
+		md-off 12
+
+ipcmd parser create metadata-rule name md.udp.dst_port			\
+		type bit_offset						\
+		addoff 16						\
+		md-off 14
 
 # Creates a metalist object identified by name "mdl.ipv4", which will later be
 # associated with a parse node. 
 # metalist is a collection of previously defined metadata extraction rules
 # related to a specific protocol (IPv4 in this case).
-ipcmd parser create metalist name mdl.ipv4				\
-		metadata md.dst_address_offset				\
-		metadata md.src_address_offset 				\
-		metadata md.ipproto_offset
+ipcmd parser create metadata-ruleset name mdl.ipv4			\
+		md.rule md.ipv4.ttl					\
+		md.rule md.ipv4.ipproto_offset 				\
+		md.rule md.ipv4.src_address_offset			\
+		md.rule md.ipv4.dst_address_offset
 
 # This is a metalist for TCP metadata similar to above IPv4.
-ipcmd parser create metalist name mdl.tcp				\
-		metadata md.tcp.src_port				\
-		metadata md.tcp.dst_port
+ipcmd parser create metadata-ruleset name mdl.tcp			\
+		md.rule md.tcp.src_port					\
+		md.rule md.tcp.dst_port
+
+# Explicitly define a metalist (i.e. metadata-ruleset) for UDP
+ipcmd parser create metadata-ruleset name mdl.udp			\
+		md.rule md.udp.src_port					\
+		md.rule md.udp.dst_port
+
+# Define udp parse node and explicitly attach it with metadata-ruleset for UDP
+ipcmd parser create node name node.udp                                  \
+                min-hdr-length 8                                        \
+                md.ruleset mdl.udp
 
 # Creates a parse node object identified by name "node.ether"
 # This node represents the rules for parsing the ethernet header.
-# `hdr.minlen 14` specifies minimum length of the ethernet header as 14 bytes.
+# `min-hdr-length 14` specifies minimum length of the ethernet header as 14
+# bytes.
 # `nxt.offset 12` specifies the offset of the next protocol field for ethernet
 # (in this case, it is start of the ethtype field in the ethernet header).
 # `nxt.length 2` specifies the length of the ethtype field in the ethernet
@@ -99,14 +117,15 @@ ipcmd parser create metalist name mdl.tcp				\
 # used for next protocol lookup from the nxt.table (table.ether was defined
 # earlier).
 ipcmd parser create node name node.ether				\
-		hdr.minlen 14						\
-		nxt.offset 12						\
-		nxt.length 2						\
+		min-hdr-length 14					\
+		nxt.field-off 12					\
+		nxt.field-len 2						\
 		nxt.table table.ether
 
 # Creates a parse node object identified by name "node.ipv4"
 # This node represents the rules for parsing the IPv4 header.
-# `hdr.minlen 20` specifies minimum length of the IPv4 header must be 20 bytes.
+# `min-hdr-length 20` specifies minimum length of the IPv4 header must be 20
+# bytes.
 # `hdr.lenoff 0` specifies the byte offset position of the actual IPv4 header
 # length field from the beginning of the IPv4 header.
 # `hdr.lenlen 1` specifies length of the packet headerlength field in bytes(i.e.
@@ -127,16 +146,21 @@ ipcmd parser create node name node.ether				\
 # user specified metadata buffer.
 # length_field_value = TODO:
 # hdr_len = (hdr.lenmultiplier * length_field_value) + hdr.add
-ipcmd parser create node name node.ipv4					\
-		hdr.minlen 20 						\
-		hdr.len.off 0						\
-		hdr.len.len 1						\
-		hdr.len.mask 0x0f					\
-		hdr.len.multiplier 4					\
-		nxt.offset 9						\
-		nxt.length 1						\
+# Define IPv4 common proto parse node configs in a reusable shell variable
+# for later reuse
+IPv4protonode=$(cat <<-END
+                min-hdr-length 20
+                hdr.len.field-off 0
+                hdr.len.mask 0x0f
+                hdr.len.multiplier 4
+                nxt.field-off 9
+                nxt.field-len 1
+END
+)
+ipcmd parser create node name node.ipv4                                 \
+                $IPv4protonode                                          \
 		nxt.table table.ip					\
-		metalist mdl.ipv4
+		md.ruleset mdl.ipv4
 
 # Creates a parse node object identified by name "node.tcp"
 # This node represents the rules for parsing the TCP header.
@@ -144,12 +168,11 @@ ipcmd parser create node name node.ipv4					\
 # for TCP protocol header parsing and executing TCP header related metadata
 # extraction rules.
 ipcmd parser create node name node.tcp					\
-		hdr.minlen 20						\
-		hdr.len.off 12						\
-		hdr.len.len 1						\
+		min-hdr-length 20					\
+		hdr.len.field-off 12					\
 		hdr.len.mask 0xf0					\
 		hdr.len.multiplier 4					\
-		metalist mdl.tcp
+		md.ruleset mdl.tcp					\
 
 # Creates an entry to the previously created empty lookup table named
 # table.ether
@@ -168,25 +191,23 @@ ipcmd parser create table/table.ip					\
 		key 0x6							\
 		node node.tcp
 
+ipcmd parser create table/table.ip					\
+		key 0x11						\
+		node node.udp
+
 # Creates a parser object identified by name "test_parser"
 # metametasize specifies the user specified metadata buffer size. This value
 # must be less than or equal to the user passed buffer's size in the API
 # kparser_parse(). Also user must not send smaller metadata buffer in API
 # than what is being configured here using metametasize.
-# In this example, the user metadata buffer can be interpreted as:
-# struct usermetadata {
-#        __u16 ipproto_offset;
-#        __u16 src_ip_offset;
-#        __u16 dst_ip_offset;
-#        __u16 src_port_offset;
-#        __u16 dst_port_offset;
-# } __packed;
 # Hence the `metametasize` should be sizeof(struct usermetadata), i.e. 10
 # rootnode specifies the name of the protocol root node of this parser instance.
 # node.ether is specified as rootnode since this parser starts parsing from
 # ethernet packet.
 ipcmd parser create parser name test_parser				\
-		metametasize 10						\
+		metametasize 16						\
 		rootnode node.ether
 
 ipcmd parser read parser name test_parser
+
+echo "This script passed!"
