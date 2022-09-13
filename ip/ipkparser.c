@@ -20,12 +20,67 @@
 #include "ip_common.h"
 #include "kparser_common.h"
 
-static inline bool keymatches(const char *prefix, const char *string)
+// static struct kparser_cmd_args_ns_aliases op_alias_map[KPARSER_NS_MAX];
+
+static inline void store_alias(int nsid, const char *key, const char *alias)
 {
-	if (!*prefix)
-		return true;
+}
+
+static inline const char * convert_to_alias(const char *key, int nsid)
+{
+	return key;
+}
+
+static inline int keymatches(const char *prefix, const char *string)
+{
+	if (!prefix || !string)
+		return 0;
 
 	return strcmp(prefix, string);
+}
+
+static inline int keymatches_aliases(const char *prefix, const char *key,
+		const void *aliases, int limit)
+{
+	const struct kparser_cmd_args_ns_aliases *ns_aliases = aliases;
+	int i = 0, j;
+
+/*
+	if (prefix && key)
+		printf("{%s:%d}:prefix:%s key:%s]\n",
+		__func__, __LINE__, prefix, key);
+*/
+
+	if (keymatches(prefix, key) == 0)
+		return 0;
+
+	if (!ns_aliases)
+		return 1;
+
+	if (limit == -1)
+		limit = KPARSER_CONFIG_MAX_KEYS;
+
+	while(i < limit) {
+		if (ns_aliases->keyaliases[i].keyname == NULL)
+			return 1;
+
+		if (keymatches(key, ns_aliases->keyaliases[i].keyname) == 0)
+			break;
+		i++;
+	}
+
+	for (j = 0; j < KPARSER_CONFIG_MAX_ALIASES; j++) {
+		if (ns_aliases->keyaliases[i].aliases[j] == NULL)
+			break;
+		// printf("{%s:%d}:[%s->%s]\n", __func__, __LINE__, prefix, ns_aliases->keyaliases[i].aliases[j]);
+		if (keymatches(prefix, ns_aliases->keyaliases[i].aliases[j]) == 0) {
+			store_alias(ns_aliases->nsid, key, ns_aliases->keyaliases[i].aliases[j]);
+			return 0;
+		}
+	}
+
+
+	return 1;
 }
 
 static const char *progname = "ip";
@@ -273,6 +328,8 @@ static void dump_an_obj(const struct kparser_global_namespaces *namespace,
 
 		print_id = curr_arg->print_id;
 
+		kname = convert_to_alias(kname, namespace->name_space_id);
+
 		key = json_indented_block_start(kname);
 
 		if (!key)
@@ -489,7 +546,7 @@ static void dump_cmd_rsp(const struct kparser_global_namespaces *namespace,
 static inline bool parse_cmd_line_key_val_str(int argc, int *argidx,
 		const char *argv[], bool mandatory, const char *key,
 		void *value, size_t value_len, bool *value_err,
-		bool restart)
+		bool restart, const void *aliases)
 {
 	const char *str_arg_ptr;
 
@@ -513,7 +570,7 @@ static inline bool parse_cmd_line_key_val_str(int argc, int *argidx,
 		}
 	}
 
-	if (keymatches(argv[*argidx], key)) {
+	if (keymatches_aliases(argv[*argidx], key, aliases, -1)) {
 		// start scanning from beginning
 		if (restart)
 			*argidx = 0;
@@ -525,7 +582,8 @@ static inline bool parse_cmd_line_key_val_str(int argc, int *argidx,
 						key);
 				return false;
 			}
-			if (keymatches(argv[*argidx], key) == 0)
+			if (keymatches_aliases(argv[*argidx], key, aliases, -1)
+					== 0)
 				break;
 			(*argidx)++;
 		}
@@ -577,7 +635,8 @@ static inline bool parse_cmd_line_key_val_str(int argc, int *argidx,
 static inline bool parse_cmd_line_key_val_ints(int argc, int *argidx,
 		const char *argv[], bool mandatory, const char *key,
 		void *value, size_t value_len, int64_t min, int64_t max,
-		bool *value_err, bool restart, bool ignore_min_max)
+		bool *value_err, bool restart, bool ignore_min_max,
+		const void *aliases)
 {
 	char arg_val[KPARSER_MAX_STR_LEN_U64];
 	int errno_local;
@@ -589,7 +648,7 @@ static inline bool parse_cmd_line_key_val_ints(int argc, int *argidx,
 		return false;
 
 	rc = parse_cmd_line_key_val_str(argc, argidx, argv, mandatory, key,
-			arg_val, sizeof(arg_val), value_err, restart);
+			arg_val, sizeof(arg_val), value_err, restart, aliases);
 	if (!rc || *value_err)
 		return false;
 
@@ -787,7 +846,7 @@ do {									\
 			break;						\
 		for (j = 0; j < argc; j += 2) {				\
 			if (argv[j] &&					\
-				(keymatches(incompatible_keys[i],		\
+				(keymatches(incompatible_keys[i],	\
 					 argv[j]) == 0)) {		\
 				err_key_str = argv[j];			\
 				break;					\
@@ -824,6 +883,7 @@ int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
 	__u32 *ns_keys_bvs = NULL;
 	void *scratch_buf = NULL;
 	void *cmd_rsp = NULL;
+	const void *aliases;
 
 	if (nsid <= KPARSER_NS_INVALID || nsid >= KPARSER_NS_MAX)
 		return EINVAL;
@@ -832,6 +892,8 @@ int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
 
 	if (!namespace)
 		return 0;
+
+	aliases = namespace->aliases;
 
 	if (argidx && *argidx > 0)
 		key_start_idx = *argidx;
@@ -971,7 +1033,7 @@ int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
 			ret = parse_cmd_line_key_val_str(argc, argidx, argv,
 					curr_arg->mandatory, key,
 					((void *) cmd_arg) + w_offset, w_len,
-					&value_err, true);
+					&value_err, true, aliases);
 			if (ret) {
 				if ((op == op_update) && curr_arg->immutable) {
 					fprintf(stderr, "object `%s`: "
@@ -1009,7 +1071,7 @@ int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
 					((void *) cmd_arg) + w_offset, w_len,
 					curr_arg->min_value,
 					curr_arg->max_value, &value_err,
-					true, ignore_min_max);
+					true, ignore_min_max, aliases);
 			if (ret) {
 				if ((op == op_update) && curr_arg->immutable) {
 					fprintf(stderr, "object `%s`: "
@@ -1039,7 +1101,7 @@ int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
 			ret = parse_cmd_line_key_val_str(argc, argidx, argv,
 					curr_arg->mandatory, key,
 					types_buf, sizeof(types_buf),
-					&value_err, true);
+					&value_err, true, aliases);
 			if (!ret && (curr_arg->mandatory || value_err)) {
 				fprintf(stderr,
 					"namespace `%s`: "
@@ -1062,9 +1124,9 @@ int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
 				goto out;
 			}
 			for (j = 0; j < curr_arg->value_set_len; j++) {
-				if (keymatches(types_buf, 
-					curr_arg->value_set[j].set_value_str)
-						== 0) {
+				if (keymatches_aliases(types_buf, 
+					curr_arg->value_set[j].set_value_str,
+					aliases, -1) == 0) {
 					memcpy(((void *) cmd_arg) + w_offset,
 						&curr_arg->value_set[j].
 							set_value_enum, w_len);
@@ -1134,14 +1196,15 @@ array_parse_start:
 				ret = parse_cmd_line_key_val_str(argc, argidx,
 						argv, curr_arg->mandatory, key,
 						scratch_buf + offset_adjust,
-						w_len, &value_err, false);
+						w_len, &value_err, false,
+						aliases);
 			} else {
 				ret = parse_cmd_line_key_val_ints(argc, argidx,
 						argv, curr_arg->mandatory, key,
 						scratch_buf + offset_adjust,
 						w_len, curr_arg->min_value,
 						curr_arg->max_value, &value_err,
-						false, ignore_min_max);
+						false, ignore_min_max, aliases);
 			}
 
 			if (!ret) {
@@ -1268,7 +1331,8 @@ array_parse_start:
 				curr_arg = curr_arg->default_template_token;
 			if (!key)
 				key = curr_arg->key_name;
-			if (argv[i] && (keymatches(argv[i], key) == 0))
+			if (argv[i] && (keymatches_aliases(argv[i], key,
+							aliases, -1) == 0))
 				break;
 		}
 		if (j == namespace->arg_tokens_count) {
@@ -1386,7 +1450,8 @@ static int __do_cli(int op, int argc, int *argidx,
 		if (!g_namespaces[i])
 			continue;
 
-		if (keymatches(ns, g_namespaces[i]->name) == 0) {
+		if (keymatches_aliases(ns, g_namespaces[i]->name,
+					g_namespaces[i]->aliases, 1) == 0) {
 			(*argidx)++;
 			return do_cli(i, op, argc, argidx, argv,
 					hybrid_token, false, true);

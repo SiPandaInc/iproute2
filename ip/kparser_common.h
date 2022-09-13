@@ -74,6 +74,19 @@ typedef int kparser_ns_arg_post_handler(
 		const char **argv, const char *hybrid_token,
 		__u32 *ns_keys_bvs, struct kparser_conf_cmd *cmd_arg);
 
+#define KPARSER_CONFIG_MAX_ALIASES			3
+
+struct kparser_cmd_args_keyname_aliases {
+	const char *keyname;
+	const char *aliases[KPARSER_CONFIG_MAX_ALIASES];
+};
+
+struct kparser_cmd_args_ns_aliases {
+	int nsid;
+	const struct kparser_cmd_args_keyname_aliases
+		keyaliases[KPARSER_CONFIG_MAX_KEYS];
+};
+
 struct kparser_global_namespaces {
 	enum kparser_global_namespace_ids name_space_id;
 	const char *name;
@@ -88,6 +101,7 @@ struct kparser_global_namespaces {
 	int rsp_attr_id;
 	kparser_ns_arg_pre_handler  *custom_do_cli;
 	kparser_ns_arg_post_handler *post_process_handler;
+	const struct kparser_cmd_args_ns_aliases *aliases;
 };
 
 struct kparser_arg_key_val_token {
