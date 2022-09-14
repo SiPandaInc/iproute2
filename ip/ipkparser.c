@@ -20,16 +20,18 @@
 #include "ip_common.h"
 #include "kparser_common.h"
 
-// static struct kparser_cmd_args_ns_aliases op_alias_map[KPARSER_NS_MAX];
+struct kparser_cmd_args_key_alias_map {
+	const char *key;
+	const char *alias;
+};
 
-static inline void store_alias(int nsid, const char *key, const char *alias)
-{
-}
+struct kparser_cmd_args_key_aliases {
+	int count;
+	struct kparser_cmd_args_key_alias_map
+		key_alias_maps[KPARSER_CONFIG_MAX_KEYS];
+};
 
-static inline const char * convert_to_alias(const char *key, int nsid)
-{
-	return key;
-}
+static struct kparser_cmd_args_key_aliases op_alias_map[KPARSER_NS_MAX];
 
 static inline int keymatches(const char *prefix, const char *string)
 {
@@ -39,17 +41,41 @@ static inline int keymatches(const char *prefix, const char *string)
 	return strcmp(prefix, string);
 }
 
+
+static inline void store_alias(int nsid, const char *key, const char *alias)
+{
+	struct kparser_cmd_args_key_aliases *ns_map;
+
+	if (!key || !alias || nsid >= KPARSER_NS_MAX)
+		return;
+
+	ns_map = &op_alias_map[nsid];
+
+	ns_map->key_alias_maps[ns_map->count].key = strdup(key);
+	ns_map->key_alias_maps[ns_map->count++].alias = strdup(alias);
+}
+
+static inline const char * convert_to_alias(const char *key, int nsid)
+{
+	struct kparser_cmd_args_key_aliases *ns_map;
+	int i;
+
+	if (!key || nsid >= KPARSER_NS_MAX)
+		return key;
+
+	ns_map = &op_alias_map[nsid];
+
+	for (i = 0; i < ns_map->count; i++)
+		if (keymatches(ns_map->key_alias_maps[i].key, key) == 0)
+			return ns_map->key_alias_maps[i].alias;
+	return key;
+}
+
 static inline int keymatches_aliases(const char *prefix, const char *key,
 		const void *aliases, int limit)
 {
 	const struct kparser_cmd_args_ns_aliases *ns_aliases = aliases;
 	int i = 0, j;
-
-/*
-	if (prefix && key)
-		printf("{%s:%d}:prefix:%s key:%s]\n",
-		__func__, __LINE__, prefix, key);
-*/
 
 	if (keymatches(prefix, key) == 0)
 		return 0;
@@ -72,9 +98,10 @@ static inline int keymatches_aliases(const char *prefix, const char *key,
 	for (j = 0; j < KPARSER_CONFIG_MAX_ALIASES; j++) {
 		if (ns_aliases->keyaliases[i].aliases[j] == NULL)
 			break;
-		// printf("{%s:%d}:[%s->%s]\n", __func__, __LINE__, prefix, ns_aliases->keyaliases[i].aliases[j]);
-		if (keymatches(prefix, ns_aliases->keyaliases[i].aliases[j]) == 0) {
-			store_alias(ns_aliases->nsid, key, ns_aliases->keyaliases[i].aliases[j]);
+		if (keymatches(prefix, ns_aliases->keyaliases[i].
+					aliases[j]) == 0) {
+			store_alias(ns_aliases->nsid, key,
+					ns_aliases->keyaliases[i].aliases[j]);
 			return 0;
 		}
 	}
@@ -280,7 +307,8 @@ static void dump_an_obj(const struct kparser_global_namespaces *namespace,
 
 	open_json_object(NULL);
 	open_json_object(objnamebuf);
-	open_json_object(namespace->name);
+	open_json_object(convert_to_alias(namespace->name,
+				namespace->name_space_id));
 
 	for (i = 0; i < namespace->arg_tokens_count; i++) {
 		if (!(cliflag & KPARSER_CLI_FLAG_REPORT_ALL_PARAMS) &&
