@@ -1515,11 +1515,13 @@ static struct kparser_cli_ops cli_ops[] = {
 		.op = op_read,
 		.description = "read an object",
 	},
+#if 0
 	{
 		.op_name = "update",
 		.op = op_update,
 		.description = "modify an object",
 	},
+#endif
 	{
 		.op_name = "delete",
 		.op = op_delete,
