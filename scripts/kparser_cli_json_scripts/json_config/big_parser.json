@@ -1,0 +1,561 @@
+{
+  "parsers": [
+    {
+      "name": "big_parser",
+      "root-node": "ether"
+    }
+  ],
+  "parse-nodes": [
+    {
+      "name": "ether",
+      "min-hdr-length": 14,
+      "next-proto": {
+        "field-off": 12,
+        "field-len": 2,
+        "table": "ether"
+      },
+      "metadata": {
+        "ents" : [
+          {
+            "name": "proto",
+            "type": "extract",
+            "md-off": 12,
+            "hdr-src-off": 0,
+            "length": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "ipv4-chk",
+      "min-hdr-length": 1,
+      "overlay": true,
+      "cond-exprs": {
+        "list": "check_ip_is_v4"
+      },
+      "next-node": "ipv4-frag-chk"
+    },
+    {
+      "name": "ipv4-frag-chk",
+      "min-hdr-length": 20,
+      "next-proto": {
+        "field-off": 6,
+        "field-len": 1,
+        "mask": "0x3fff",
+        "default": "stop_okay",
+        "table": "ip-proto"
+      },
+      "hdr-length": {
+        "field-off": 0,
+        "field-len": 1,
+        "mask": "0xf",
+        "multiplier": 4
+      },
+      "cond_exprs" : {
+        "type": "or",
+        "default-fail": "stop-okay",
+        "ents": [
+          {
+            "name": "check_ip_is_not_fragment",
+            "type": "equal",
+            "field-off": 6,
+            "field-len": 2,
+            "mask": "0x3fff",
+            "value": 0
+          },
+          {
+            "name": "check_fragment_offset_zero",
+            "type": "equal",
+            "field-off": 6,
+            "field-len": 2,
+            "mask": "0xfff",
+            "value": 0
+          }
+        ]
+      },
+      "metadata": {
+        "ents": [
+          {
+            "name": "ip_proto",
+            "type": "extract",
+            "md-off": 10,
+            "hdr-src-off": 9,
+            "length": 1
+          },
+          {
+            "name": "ident",
+            "type": "extract",
+            "md-off": 14,
+            "hdr-src-off": 4,
+            "length": 2,
+            "endian-swap": true
+          },
+          {
+            "name": "src_address",
+            "type": "extract",
+            "md-off": 20,
+            "hdr-src-off": 12,
+            "length": 8
+          },
+          {
+            "name": "dst_address",
+            "type": "extract",
+            "md-off": 20,
+            "hdr-src-off": 12,
+            "length": 8
+          },
+          {
+            "name": "ihl",
+            "type": "nibb_extract",
+            "md-off": 16,
+            "hdr-src-off": 0,
+            "nibb-length": 1,
+            "nibb-odd": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "ipv6-chk",
+      "min-hdr-length": 1,
+      "overlay": true,
+      "cond-exprs": {
+        "default-fail": "stop_fail",
+        "ents": [
+          {
+            "name": "check_ip_is_v6",
+            "type": "equal",
+            "field-off": 0,
+            "field-len": 1,
+            "mask": "0xf0",
+            "value": 6
+          }
+        ]
+      },
+      "next-node": "ipv6"
+    },
+    {
+      "name": "ipv6",
+      "min-hdr-length": 40,
+      "next-proto": {
+        "field-off": 9,
+        "field-len": 1,
+        "mask": "0xff",
+        "table": "ip-proto"
+      },
+      "metadata": {
+        "ents" : [
+          {
+            "name": "ip_proto",
+            "type": "extract",
+            "md-off": 10,
+            "hdr-src-off": 9,
+            "length": 1
+          },
+          {
+            "name": "src_address",
+            "type": "extract",
+            "md-off": 20,
+            "hdr-src-off": 12,
+            "length": 8
+          },
+          {
+            "name": "dst_address",
+            "type": "extract",
+            "md-off": 20,
+            "hdr-src-off": 12,
+            "length": 8
+          },
+          {
+            "name": "ihl",
+            "type": "extract",
+            "md-off": 16,
+            "hdr-src-off": 0,
+            "nibb_off": true,
+            "length": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "ports",
+      "min-hdr-length": 8,
+      "metadata": {
+      "list": "ports_metadata"
+      }
+    },
+    {
+      "name": "tcp",
+      "min-hdr-length": 20,
+      "hdr-length": {
+        "field-off": 12,
+        "field-len": 1,
+        "mask": "0xf0",
+        "multiplier": 4
+      },
+      "metadata": {
+        "ents": [
+          {
+            "name": "src_port",
+            "type": "extract",
+            "md-off": 16,
+            "hdr-src-off": 0,
+            "length": 2
+          },
+          {
+            "name": "dst_port",
+            "type": "extract",
+            "md-off": 18,
+            "hdr-src-off": 2,
+            "length": 2
+          }
+        ]
+      },
+      "tlv-parse-node": {
+        "data-offset": 2,
+        "pad1": 0,
+        "eol": 1,
+        "start-offset": 20,
+        "tlv-type": {
+          "offset": 0,
+          "length": 1
+        },
+        "tlv-length": {
+          "offset": 1,
+          "length": 1,
+          "add": 2
+        },
+        "ents": [
+          {
+            "key": 5,
+            "node": "TCP-sack"
+          },
+          {
+            "key": 8,
+            "node": "TCP-TS"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GRE",
+      "min-hdr-length": 4,
+      "next-proto": {
+        "field-off": 1,
+        "field-len": 1,
+        "mask": "0x07",
+        "default": "stop_okay",
+        "ents": [
+          {
+            "key": "0x00",
+            "node": "GRE-v0"
+          },
+          {
+            "key": "0x01",
+            "node": "GRE-v1"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GRE-v0",
+      "min-hdr-length": 4,
+      "flag-fields-parse-node": {
+        "flags-offset": 0,
+        "flags-length": 2,
+        "flags-mask": "0xffff",
+        "hdr-length": {
+          "flag-fields-length": true
+        },
+        "ents": [
+          {
+            "name": "csum",
+            "flag": "0x8000",
+            "field-len": 4
+          },
+          {
+            "name": "key",
+            "flag": "0x4000",
+            "field-len": 4,
+            "node": "gre_key"
+          },
+          {
+            "name": "seq",
+            "flag": "0x2000",
+            "field-len": 4,
+            "node": "gre_seq"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GRE-v1",
+      "min-hdr-length": 4,
+      "flag-fields-parse-node": {
+        "flags-offset": 0,
+        "flags-length": 2,
+        "flags-mask": "0xffff",
+        "hdr-length": {
+          "flag-fields-length": true
+        },
+        "table": "GREv1-flags"
+      }
+    }
+  ],
+  "proto-tables": [
+    {
+      "name": "ether",
+      "ents": [
+        {
+          "name": "IPv4",
+          "key": "0x0800",
+          "node": "ipv4-chk"
+        },
+        {
+          "name": "IPv6",
+          "key": "0x0806",
+          "node": "ipv6-chk"
+        }
+      ]
+    },
+    {
+      "name": "IPv4-frag",
+      "ents": [
+        {
+          "name": "IPv4-frag",
+          "key": "0x0000",
+          "node": "ipv4-no-frag"
+        },
+        {
+          "name": "IPv4-frag",
+          "key": "0x2000",
+          "node": "ipv4-no-frag"
+        }
+      ]
+    },
+    {
+      "name": "ip-proto",
+      "ents": [
+        {
+          "name": "TCP",
+          "key": 6,
+          "node": "tcp"
+        },
+        {
+          "name": "UDP",
+          "key": 17,
+          "node": "ports"
+        }
+      ]
+    }
+  ],
+  "tlv-nodes": [
+    {
+      "name": "TCP-sack",
+      "overlay-node": {
+        "field-off": 1,
+        "field-len": 1,
+        "mask": "0xff",
+        "ents": [
+          {
+            "key": 4,
+            "node": "TCP-sack-1"
+          },
+          {
+            "key": 8,
+            "node": "TCP-sack-2"
+          },
+          {
+            "key": 12,
+            "node": "TCP-sack-3"
+          },
+          {
+            "key": 16,
+            "node": "TCP-sack-4"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TCP-sack-1",
+      "metadata": {
+        "ents": [
+          {
+            "type": "extract",
+            "md-off": 24,
+            "hdr-src-off": 2,
+            "length": 4
+          }
+        ]
+      }
+    },
+    {
+      "name": "TCP-sack-2",
+      "metadata": {
+        "ents": [
+          {
+            "type": "extract",
+            "md-off": 24,
+            "hdr-src-off": 2,
+            "length": 4
+          },
+          {
+            "type": "extract",
+            "md-off": 28,
+            "hdr-src-off": 6,
+            "length": 4
+          }
+  ]
+      }
+    },
+    {
+      "name": "TCP-sack-3",
+      "metadata": {
+        "ents": [
+          {
+            "type": "extract",
+            "md-off": 24,
+            "hdr-src-off": 2,
+            "length": 4
+          },
+          {
+            "type": "extract",
+            "md-off": 28,
+            "hdr-src-off": 6,
+            "length": 4
+          },
+          {
+            "type": "extract",
+            "md-off": 32,
+            "hdr-src-off": 10,
+            "length": 4
+    }
+        ]
+      }
+    },
+    {
+      "name": "TCP-sack-4",
+      "metadata": {
+        "ents": [
+          {
+            "type": "extract",
+            "md-off": 24,
+            "hdr-src-off": 2,
+            "length": 4
+          },
+          {
+            "type": "extract",
+            "md-off": 28,
+            "hdr-src-off": 6,
+            "length": 4
+          },
+          {
+            "type": "extract",
+            "md-off": 32,
+            "hdr-src-off": 10,
+            "length": 4
+          },
+          {
+            "type": "extract",
+            "md-off": 36,
+            "hdr-src-off": 14,
+            "length": 4
+          }
+  ]
+      }
+    }
+  ],
+  "flag-fields-tables": [
+    {
+      "name": "GREv1-flags",
+      "ents": [
+        {
+          "name": "csum",
+          "flag": "0x8000",
+          "field-len": 4
+        },
+        {
+          "name": "key",
+          "flag": "0x4000",
+          "field-len": 4,
+          "node": "gre_key"
+        },
+        {
+          "name": "seq",
+          "flag": "0x2000",
+          "field-len": 4,
+          "node": "gre_seq"
+        },
+        {
+          "name": "ack",
+          "flag": "0x1000",
+          "field-len": 4
+        }
+      ]
+    }
+  ],
+  "flag_fields_nodes": [
+    {
+      "name": "gre_key",
+      "metadata": {
+        "ents": [
+          {
+            "type": "extract",
+            "md-off": 32,
+            "hdr-src-off": 0,
+            "length": 4
+          }
+        ]
+      }
+    },
+    {
+      "name": "gre_seq",
+      "metadata": {
+        "ents": [
+          {
+            "type": "extract",
+            "md-off": 36,
+            "hdr-src-off": 0,
+            "length": 4
+          }
+        ]
+      }
+    }
+  ],
+  "metadata-list": [
+    {
+      "name": "ports_metadata",
+      "ents": [
+        {
+          "name": "src_port",
+          "type": "extract",
+          "md-off": 16,
+          "hdr-src-off": 0,
+          "length": 2
+        },
+        {
+          "name": "dst_port",
+          "type": "extract",
+          "md-off": 18,
+          "hdr-src-off": 2,
+          "length": 2
+        }
+      ]
+    }
+  ],
+  "cond_exprs_tables": [
+    {
+      "name": "check_ip_is_v4",
+      "fail_result": "stop-fail",
+      "ents": [
+        {
+          "type": "equal",
+          "field-off": 0,
+          "field-len": 1,
+          "mask": "0xf0",
+          "value": 4
+        }
+      ]
+    }
+  ]
+}
