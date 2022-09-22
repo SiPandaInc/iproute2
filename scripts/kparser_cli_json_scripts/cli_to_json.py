@@ -100,7 +100,10 @@ def table_fun(dic):
         if flag == 1:
             for t in proto_tables:
                 if t['name'] == val:
-                    t['ent'] = ent_list
+                    if 'ent' in t:
+                        t['ent'].extend(ent_list)
+                    else:
+                        t['ent'] = ent_list
         else:
             table['ent'] = ent_list
     if table:
