@@ -171,7 +171,6 @@
             "type": "extract",
             "md-off": 16,
             "hdr-src-off": 0,
-            "nibb_off": true,
             "length": 1
           }
         ]
@@ -494,7 +493,7 @@
       ]
     }
   ],
-  "flag_fields_nodes": [
+  "flag-fields-nodes": [
     {
       "name": "gre_key",
       "metadata": {
@@ -543,19 +542,19 @@
       ]
     }
   ],
-  "cond_exprs_tables": [
+  "cond-exprs-list": [
     {
       "name": "check_ip_is_v4",
-      "fail_result": "stop-fail",
-      "ents": [
-        {
-          "type": "equal",
-          "field-off": 0,
-          "field-len": 1,
-          "mask": "0xf0",
-          "value": 4
-        }
-      ]
+      "default-fail": "stop_fail",
+			"ents": [
+				{
+					"type": "equal",
+					"field-off": 0,
+					"field-len": 1,
+					"mask": "0xf0",
+					"value": 4
+				}
+			]
     }
   ]
 }

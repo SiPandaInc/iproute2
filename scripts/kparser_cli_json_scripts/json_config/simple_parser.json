@@ -1,0 +1,145 @@
+{
+  "parsers": [
+    {
+      "name": "sdpu_parser",
+      "root-node": "ether_node"
+    }
+  ],
+  "parse-nodes": [
+    {
+      "name": "ether_node",
+      "min-hdr-length": 14,
+      "next-proto": {
+        "field-off": 12,
+        "field-len": 2,
+        "table": "ether_table"
+      }
+    },
+    {
+      "name": "ipv4_node",
+      "min-hdr-length": 20,
+      "next-proto": {
+        "field-off": 9,
+        "field-len": 1,
+        "table": "ip_table"
+      },
+      "hdr-length": {
+        "field-off": 0,
+        "field-len": 1,
+        "mask": "0xf",
+        "multiplier": 4
+      },
+      "metadata": {
+        "ents": [
+          {
+            "name": "addrs.v4_addrs.src",
+            "type": "extract",
+            "md-off": 8,
+            "hdr-src-off": 12,
+            "length": 4
+          },
+          {
+            "name": "addrs.v4_addrs.dst",
+            "type": "extract",
+            "md-off": 8,
+            "hdr-src-off": 16,
+            "length": 8
+          },
+          {
+            "name": "ip_proto",
+            "type": "extract",
+            "md-off": 1,
+            "hdr-src-off": 9,
+            "length": 1
+          },
+          {
+            "name": "addr_type",
+            "type": "constant",
+            "md-off": 0,
+            "length": 1,
+            "value": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "ipv6_node",
+      "min-hdr-length": 40,
+      "next-proto": {
+        "field-off": 6,
+        "field-len": 1,
+        "table": "ip_table"
+      },
+      "metadata": {
+        "ents": [
+          {
+            "name": "addrs.v6_addrs",
+            "type": "extract",
+            "md-off": 8,
+            "hdr-src-off": 8,
+            "length": 4
+          },
+          {
+            "name": "addr_type",
+            "type": "constant",
+            "md-off": 0,
+            "length": 1,
+            "value": 2
+          },
+          {
+            "name": "ip_proto",
+            "type": "extract",
+            "md-off": 1,
+            "hdr-src-off": 6,
+            "length": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "ports_node",
+      "min-hdr-length": 4,
+      "metadata": {
+        "ents": [
+          {
+            "name": "ports",
+            "type": "extract",
+            "md-off": 4,
+            "hdr-src-off": 0,
+            "length": 4
+          }
+        ]
+      }
+    }
+  ],
+  "proto-tables": [
+    {
+      "name": "ether_table",
+      "ents": [
+        {
+          "name": "ipv4_node",
+          "key": "0x8",
+          "node": "ipv4_node"
+        },
+        {
+          "name": "ipv6_node",
+          "key": "0xdd86",
+          "node": "ipv6_node"
+        }
+      ]
+    },
+    {
+      "name": "ip_table",
+      "ents": [
+        {
+          "key": "0x6",
+          "node": "port_node"
+        },
+        {
+          "key": "0x11",
+          "node": "ports_node"
+        }
+      ]
+    }
+  ]
+}

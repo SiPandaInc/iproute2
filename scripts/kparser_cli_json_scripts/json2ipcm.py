@@ -1,4 +1,4 @@
-# Convert a parser in .json representation to tc parser commands
+# Convert a parser in .json representation to ipcmd parser commands
 #
 # Copyright SiPanda Inc., 2022
 #
@@ -173,9 +173,9 @@ def add_flag_fields_node_to_list(flag_fields_node, name):
 					"id": flag_fields_node_id }
 	flag_fields_node_id += 1
 
-# Output tc commands to create metadata instances. Read the global metadata
+# Output ipcmd commands to create metadata instances. Read the global metadata
 # list and output a create metadata command for each entry
-def output_tc_metadata():
+def output_ipcmd_metadata():
 	global metadata_list
 
 	if metadata_list == {}:
@@ -193,12 +193,13 @@ def output_tc_metadata():
 			if 'name' in instance:
 				name = "%s.%s" % (metadata_name,
 						  instance['name'])
-				output("tc parser create metadata name %s "
-				       "id 0x%x" % (name, id))
+				output("ipcmd parser create metadata-rule name %s" % name)
+				mylist.append(name)
 			else:
-				output("tc parser create metadata id 0x%x" % id)
+				output("ipcmd parser create metadata-rule")
+				name = "%s.%i" % (metadata_name, id)
+				mylist.append(name)
 
-			mylist.append(id)
 			id += 1
 			if 'type' not in instance:
 				if 'hdr-src-off' in instance:
@@ -221,21 +222,52 @@ def output_tc_metadata():
 					    "hdrdata metadata %s" %
 					    metadata_name)
 
-				output(" soff %s" % instance['hdr-src-off'])
+				output(" type hdrdata hdr-src-off %s" % instance['hdr-src-off'])
 			elif type == 'offset':
 				check_exist('hdr-src-off', instance,
 					    "'hdr-src-off' must defined for "
 					    "hdrdata metadata %s" %
 					    metadata_name)
 
-				output(" soff %s" % instance['hdr-src-off'])
-			elif type == 'constant':
-				check_exist('constant', instance,
-					    "'constant' must defined for "
+				output(" type offset addoff %s" % instance['hdr-src-off'])
+
+				if 'length' not in instance:
+					instance['length'] = 2 # default length for offset metadata
+			elif type == 'bit_offset':
+				check_exist('hdr-src-off', instance,
+					    "'hdr-src-off' must defined for "
 					    "hdrdata metadata %s" %
 					    metadata_name)
 
-				output(" constant %s" % instance['constant'])
+				output(" type bit_offset addoff %s" % instance['hdr-src-off'])
+
+				if 'length' not in instance:
+					instance['length'] = 2 # default length for offset metadata
+			elif type == 'nibb_extract':
+				check_exist('hdr-src-off', instance,
+					    "'hdr-src-off' must defined for "
+					    "nibb_extract metadata %s" %
+					    metadata_name)
+
+				output(" type nibbs_hdrdata hdr-src-off %s" % instance['hdr-src-off'])
+			elif type == 'constant':
+				check_exist('value', instance,
+					    "'value' must defined for "
+					    "hdrdata metadata %s" %
+					    metadata_name)
+
+				if 'length' not in instance:
+					instance['length'] = 2 # default length for constant metadata
+
+				if instance['length'] == 1:
+					tp = 'constant_byte'
+				elif instance['length'] == 2:
+					tp = 'constant_halfword'
+				else:
+					err("Constante of size %s is not supported by ipcmd" %
+							instance['length'])
+
+				output(" type %s constantvalue %s" % instance['value'])
 
 			else:
 				# Need to add other types of metadata
@@ -246,27 +278,27 @@ def output_tc_metadata():
 				    "'md-off' must defined for metadata %s" %
 				     metadata_name)
 
+			length = 'length' if type != 'nibb_extract' else 'nibb-length'
+
 			# Length of data to write
-			# check_exist('length', instance,
-			# 	    "'length' must defined for metadata %s" %
-			# 	     metadata_name)
+			check_exist(length, instance,
+				    "'%s' must defined for metadata %s" %
+				     (length, metadata_name))
 
-			length = instance['length'] if 'length' in instance else 2
+			outputnl(" md-off %s length %s" % (instance['md-off'],
+						      instance[length]))
 
-			outputnl(" doff %s length %s" % (instance['md-off'],
-						      instance['length']))
 		if mylist != []:
 			# Create a metalist for this set of metadata
-			output("tc parser create metalist name %s id 0x%x" %
-				 (metadata_name, mid))
-			for i in mylist:
-				output(" metadata 0x%x" % i)
+			output("ipcmd parser create metadata-ruleset name %s" % metadata_name)
+			for name in mylist:
+				output(" md.rule %s" % name)
 			outputnl("")
 			outputnl("")
 
-# Output tc commands to create create proto tables. Read the global list of
+# Output ipcmd commands to create create proto tables. Read the global list of
 # tables and and output a create table command for each entry
-def output_tc_tables():
+def output_ipcmd_tables():
 	global table_list
 
 	if table_list == {}:
@@ -277,16 +309,15 @@ def output_tc_tables():
 	for table_name in table_list:
 		id = table_list[table_name]['id']
 		table = table_list[table_name]['table']
-		output("tc parser create table name %s id 0x%x" %
-		       (table_name, id))
+		output("ipcmd parser create table name %s" % table_name)
 		if 'default' in table:
 		  output(" default %s" % table['default'])
 		outputnl("")
 	outputnl("")
 
-# Output tc commands to create flagfields tables. Read the global list of
+# Output ipcmd commands to create flagfields tables. Read the global list of
 # flag fields and and output a create flagfields command for each entry
-def output_tc_flag_fields_tables():
+def output_ipcmd_flag_fields_tables():
 	global flag_fields_list
 
 	if flag_fields_list == {}:
@@ -296,14 +327,13 @@ def output_tc_flag_fields_tables():
 
 	for table_name in flag_fields_list:
 		id = flag_fields_list[table_name]['id']
-		outputnl("tc parser create flagfields name %s id 0x%x" %
-			 (table_name, id))
+		outputnl("ipcmd parser create flagfields name %s" % table_name)
 	outputnl("")
 
-# Output tc commands to create table entries. Read the global list of
+# Output ipcmd commands to create table entries. Read the global list of
 # tables and for each table do a create table/... command to add an entry to
 # the table
-def output_tc_table_ents():
+def output_ipcmd_table_ents():
 	global table_list
 
 	if table_list == {}:
@@ -319,7 +349,7 @@ def output_tc_table_ents():
 				    "entry in table %s" % table_name)
 			check_exist('node', entry, "'node' must be defined for "
 				    "entry in table %s" % table_name)
-			output("tc parser create table/%s/%d" %
+			output("ipcmd parser create table/%s/%d" %
 			       (table_name, cnt))
 			if 'name' in entry:
 				output(" name %s.tabent.%s" %
@@ -329,10 +359,10 @@ def output_tc_table_ents():
 			cnt += 1
 	outputnl("")
 
-# Output tc commands to create flag_fields entries. Read the global list of
+# Output ipcmd commands to create flag_fields entries. Read the global list of
 # flag_fields and for each table do a create flagfield/... command to add an
 # entry to the table
-def output_tc_flag_fields():
+def output_ipcmd_flag_fields():
 	global flag_fields_list
 
 	if flag_fields_list == {}:
@@ -350,7 +380,7 @@ def output_tc_flag_fields():
 			check_exist('field-len', entry, "'field-len' "
 				    "must be defined for entry in flag fields "
 				    "table %s" % table_name)
-			output("tc parser create flagfield/%s/%d flag %s"
+			output("ipcmd parser create flagfield/%s/%d flag %s"
 			       " field_length %s" %
 			       (table_name, cnt, entry['flag'],
 				entry['field-len']))
@@ -360,8 +390,8 @@ def output_tc_flag_fields():
 			outputnl("")
 	outputnl("")
 
-# Output a metadata list ID for a parse node or TLV node tc command
-def output_tc_node_metadata(metadata, node_name):
+# Output a metadata list ID for a parse node or TLV node ipcmd command
+def output_ipcmd_node_metadata(metadata, node_name):
 	if 'ents' in metadata:
 		table_name = "%s.metadata" % node_name
 	elif 'list' in metadata:
@@ -369,10 +399,10 @@ def output_tc_node_metadata(metadata, node_name):
 	if table_name not in metadata_list:
 		err("Cannot find %s in metadata list" %
 				    table_name)
-	output(" metadata 0x%x" % metadata_list[table_name]['id'])
+	output(" md.ruleset %s" % table_name)
 
-# Output TLV parameters for a tc command to create parse nodes
-def output_tc_node_tlv_node(tlv_parse_node, node_name):
+# Output TLV parameters for a ipcmd command to create parse nodes
+def output_ipcmd_node_tlv_node(tlv_parse_node, node_name):
 	if 'ents' in tlv_parse_node:
 		table_name = "%s.tlv_table" % node_name
 	elif 'table' in tlv_parse_node:
@@ -423,8 +453,8 @@ def output_tc_node_tlv_node(tlv_parse_node, node_name):
 	if 'eol' in tlv_parse_node:
 		output(" tlveol %u" % tlv_parse_node['eol'])
 
-# Output flag fields  parameters for a tc command to create parse nodes
-def output_tc_node_flag_fields_node(flag_fields_parse_node, node_name, node):
+# Output flag fields  parameters for a ipcmd command to create parse nodes
+def output_ipcmd_node_flag_fields_node(flag_fields_parse_node, node_name, node):
 	if 'ents' in flag_fields_parse_node:
 		table_name = "%s.flag_fields" % node_name
 	elif 'table' in flag_fields_parse_node:
@@ -464,7 +494,7 @@ def output_tc_node_flag_fields_node(flag_fields_parse_node, node_name, node):
 			output(" hdrlenflags")
 
 def output_parse_node(node_name, node, id):
-	output("tc parser create node name %s id 0x%x" % (node_name, id))
+	output("ipcmd parser create node name %s" % node_name)
 	check_exist('min-hdr-length', node, "'min-hdr-length' must be defined for "
 		    "parse_node %s" % node_name)
 	output(" minlen %s" % node['min-hdr-length'])
@@ -510,22 +540,22 @@ def output_parse_node(node_name, node, id):
 			err("Parse node %s cannot be both a TLV parse "
 			    "node and a flag fields parse node")
 		tlv_parse_node = node['tlv-parse-node']
-		output_tc_node_tlv_node(tlv_parse_node, node_name)
+		output_ipcmd_node_tlv_node(tlv_parse_node, node_name)
 
 	elif 'flag-fields-parse-node' in node:
 		flag_fields_parse_node = node['flag-fields-parse-node']
-		output_tc_node_flag_fields_node(flag_fields_parse_node,
+		output_ipcmd_node_flag_fields_node(flag_fields_parse_node,
 						node_name, node)
 
 	if 'metadata' in node:
-		output_tc_node_metadata(node['metadata'], node_name)
+		output_ipcmd_node_metadata(node['metadata'], node_name)
 
 	outputnl("")
 
-# Output tc commands to create parse nodes. Read the global list of parse nodes
+# Output ipcmd commands to create parse nodes. Read the global list of parse nodes
 # and for each each one do a create node command. This also handles TLV parse
 # nodes and flag fields parse nodes
-def output_tc_parse_nodes():
+def output_ipcmd_parse_nodes():
 	global parse_node_list
 	global table_list
 
@@ -541,9 +571,9 @@ def output_tc_parse_nodes():
 
 	outputnl("")
 
-# Output tc commands to create TLV nodes. Read the global list of TLV nodes
+# Output ipcmd commands to create TLV nodes. Read the global list of TLV nodes
 # and for each do a create TLV node command
-def output_tc_tlv_nodes():
+def output_ipcmd_tlv_nodes():
 	global tlv_node_list
 	global table_list
 
@@ -555,8 +585,7 @@ def output_tc_tlv_nodes():
 	for tlv_node_name in tlv_node_list:
 		id = tlv_node_list[tlv_node_name]['id']
 		tlv_node = tlv_node_list[tlv_node_name]['node']
-		output("tc parser create tlvnode name %s id 0x%x" %
-		       (tlv_node_name, id))
+		output("ipcmd parser create tlvnode name %s" % tlv_node_name)
 
 		if 'overlay-node' in tlv_node:
 			overlay_tlv = tlv_node['overlay-node']
@@ -575,15 +604,15 @@ def output_tc_tlv_nodes():
 			output(" overlaytable 0x%x" % table_id)
 
 		if 'metadata' in tlv_node:
-			output_tc_node_metadata(tlv_node['metadata'],
+			output_ipcmd_node_metadata(tlv_node['metadata'],
 					     tlv_node_name)
 
 		outputnl("")
 	outputnl("")
 
-# Output tc commands to create conditional expression. Read the global
+# Output ipcmd commands to create conditional expression. Read the global
 # conditional expressions list and output a create command for each entry
-def output_tc_cond_exprs():
+def output_ipcmd_cond_exprs():
 	global cond_exprs_list
 
 	if cond_exprs_list == {}:
@@ -601,12 +630,10 @@ def output_tc_cond_exprs():
 			if 'name' in instance:
 				iname = instance['name']
 				name = "%s.%s" % (cond_exprs_name, iname)
-				output("tc parser create cond-exprs name %s "
-				       "id 0x%x" % (name, id))
+				output("ipcmd parser create cond-exprs name %s" % name)
 			else:
 				iname = "<unnamed>"
-				output("tc parser create cond-exprs id "
-				       "0x%x" % id)
+				output("ipcmd parser create cond-exprs")
 
 			check_exist('type', instance, "'type' must be defined "
 				    "for conditional expression %s" % iname)
@@ -633,8 +660,8 @@ def output_tc_cond_exprs():
 
 		if mylist != []:
 			# Create a metalist for this set of metadata
-			output("tc parser create cond_exprs_list name %s "
-			       "id 0x%x" % (cond_exprs_name, mid))
+			output("ipcmd parser create cond_exprs_list name %s "
+					% cond_exprs_name)
 
 			if 'type' in cond_exprs:
 				output(" type %s" % cond_exprs['type'])
@@ -647,9 +674,9 @@ def output_tc_cond_exprs():
 			outputnl("")
 			outputnl("")
 
-# Out tc commands to create parsers. For each entry in the parser list
+# Out ipcmd commands to create parsers. For each entry in the parser list
 # do a create parser command
-def output_tc_parsers():
+def output_ipcmd_parsers():
 	global parser_list
 	global table_list
 
@@ -665,8 +692,7 @@ def output_tc_parsers():
 		if parser['root-node'] not in parse_node_list:
 			err("Parser %s has non existent root node %s" %
 			    (parser_name, parser['root-node']))
-		output("tc parser create parser name %s id 0x%x" %
-		       (parser_name, parser_list[parser_name]['id']))
+		output("ipcmd parser create parser name %s" % parser_name)
 		output(" root_node %s" % parser['root-node'])
 		outputnl("")
 	outputnl("")
@@ -856,7 +882,7 @@ def preprocess_cond_exprs_list(data):
 
 n = len(sys.argv)
 if n != 2:
-	err("Usage: json2tc <json-file>")
+	err("Usage: json2ipcmd <json-file>")
 
 json_file = sys.argv[1]
 
@@ -874,14 +900,14 @@ preprocess_metadata_objects(data)
 preprocess_metadata_list(data)
 preprocess_cond_exprs_list(data)
 
-output_tc_metadata()
-output_tc_tables()
-output_tc_flag_fields_tables()
-output_tc_cond_exprs()
-output_tc_parse_nodes()
-output_tc_tlv_nodes()
-output_tc_table_ents()
-output_tc_flag_fields()
-output_tc_parsers()
+output_ipcmd_metadata()
+output_ipcmd_tables()
+output_ipcmd_flag_fields_tables()
+output_ipcmd_cond_exprs()
+output_ipcmd_parse_nodes()
+output_ipcmd_tlv_nodes()
+output_ipcmd_table_ents()
+output_ipcmd_flag_fields()
+output_ipcmd_parsers()
 
 print(outputbuf.getvalue(), end="")
