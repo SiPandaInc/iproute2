@@ -35,7 +35,7 @@ node_next_proto_map = {
 }
 node_map = {
     'name':'name',
-    'min-hdr-length':'min_hdr_length',
+    'min-hdr-length':'min-hdr-length',
     'md':'metadata',
     'nxt': ['next_proto',node_next_proto_map]
 }
@@ -61,7 +61,7 @@ def node_fun(dic):
 
 parser_map = {
     'name':'name',
-    'rootnode':'root_node'
+    'rootnode':'root-node'
 }
 
 def parser_fun(dic):
@@ -145,7 +145,7 @@ def metadata_ruleset_fun(dic):
 
 ## Functions for inlineing
 def parser_node_inline(data):
-    for node in data['parser_nodes']:
+    for node in data['parse-nodes']:
         if 'metadata' in node:
             mdl = [ele for ele in data['metadata_list'] if ele['name'] == node['metadata']]
             mdl_list = [ele['list'] for ele in mdl]
@@ -224,7 +224,7 @@ with open(file_name,'r') as f:
 ## Dump to json
 cli_output = {
     'parsers' : parsers,
-    'parser_nodes' : parse_nodes,
+    'parse-nodes' : parse_nodes,
     'proto_tables' : proto_tables,
     'metadata_list' : metadata_list,
     'metadata_objects' : metadata_objects
