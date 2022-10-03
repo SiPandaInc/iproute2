@@ -47,7 +47,7 @@ def node_fun(dic):
             target = node_map[f]
             if type(target) == str:
                 if f == 'md':
-                    node[target] = dic['node'][f]['ruleset']
+                    node[target] = {"list":dic['node'][f]['ruleset']}
                 else:
                     node[target] = dic['node'][f]
             else:
@@ -100,12 +100,12 @@ def table_fun(dic):
         if flag == 1:
             for t in proto_tables:
                 if t['name'] == val:
-                    if 'ent' in t:
-                        t['ent'].extend(ent_list)
+                    if 'ents' in t:
+                        t['ents'].extend(ent_list)
                     else:
-                        t['ent'] = ent_list
+                        t['ents'] = ent_list
         else:
-            table['ent'] = ent_list
+            table['ents'] = ent_list
     if table:
         if 'name' in table:
             proto_tables.append(table)
@@ -115,8 +115,8 @@ def table_fun(dic):
 metadata_rule_map = {
     'name':'name',
     'type':'type',
-    'addoff':'hdr_src_off',
-    'md-off':'md_off'
+    'addoff':'hdr-src-off',
+    'md-off':'md-off'
 }
 
 def metadata_rule_fun(dic):
@@ -147,23 +147,23 @@ def metadata_ruleset_fun(dic):
 def parser_node_inline(data):
     for node in data['parse-nodes']:
         if 'metadata' in node:
-            mdl = [ele for ele in data['metadata_list'] if ele['name'] == node['metadata']]
+            mdl = [ele for ele in data['metadata-list'] if ele['name'] == node['metadata']]
             mdl_list = [ele['list'] for ele in mdl]
             node['metadata_list'] = mdl_list[0]
             node.pop('metadata', None)
         if 'next_proto' in node:
             if 'table' in node['next_proto']:
-                ent = [ele for ele in data['proto_tables'] if ele['name'] == node['next_proto']['table']]
+                ent = [ele for ele in data['proto-tables'] if ele['name'] == node['next_proto']['table']]
                 ent_list = [ele['ent'] for ele in ent]
                 node['next_proto']['ents'] = ent_list[0]
                 node['next_proto'].pop('table', None)
     return data
 
 def metadatalist_inline(data):
-    for mdl in data['metadata_list']:
+    for mdl in data['metadata-list']:
         l = []
         for md in mdl['list']:
-            for ele in data['metadata_objects']:
+            for ele in data['metadata-objects']:
                 if ele['name'] == md:
                     l.append(ele)
         k = []
@@ -225,9 +225,9 @@ with open(file_name,'r') as f:
 cli_output = {
     'parsers' : parsers,
     'parse-nodes' : parse_nodes,
-    'proto_tables' : proto_tables,
-    'metadata_list' : metadata_list,
-    'metadata_objects' : metadata_objects
+    'proto-tables' : proto_tables,
+    'metadata-list' : metadata_list,
+    'metadata-objects' : metadata_objects
 }
 
 inline = args.inline
