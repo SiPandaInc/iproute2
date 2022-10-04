@@ -267,7 +267,7 @@ def output_ipcmd_metadata():
 					err("Constante of size %s is not supported by ipcmd" %
 							instance['length'])
 
-				output(" type %s constantvalue %s" % instance['value'])
+				output(" type %s constantvalue %s" % (tp, instance['value']))
 
 			else:
 				# Need to add other types of metadata
