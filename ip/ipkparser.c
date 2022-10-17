@@ -896,8 +896,7 @@ do {									\
 } while (0)
 
 int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
-		const char *hybrid_token, bool preprocess_done,
-		bool undesired_key_check)
+	   const char *hybrid_token, bool preprocess_done, bool undesired_key_check)
 {
 	size_t cmd_rsp_size = 0, old_cmd_rsp_size, w_offset, w_len, cmd_arg_len;
 	bool ret = true, value_err = false, ignore_min_max = false;
@@ -1485,6 +1484,17 @@ static int __do_cli(int op, int argc, int *argidx,
 
 		if (keymatches_aliases(ns, g_namespaces[i]->name,
 					g_namespaces[i]->aliases, 1) == 0) {
+
+
+			if (op == op_lock || op == op_unlock) {
+				if (strcmp(g_namespaces[i]->name, "parserlockunlock")) {
+					fprintf(stderr,
+						"lock/unlock operation is only supported by object"
+						" parserlockunlock\n");
+					return -EINVAL;
+				}
+			}
+
 			(*argidx)++;
 			return do_cli(i, op, argc, argidx, argv,
 					hybrid_token, false, true);
@@ -1497,14 +1507,7 @@ errout:
 	return -EINVAL;
 }
 
-struct kparser_cli_ops {
-	int op;
-	const char *op_name;
-	const char *description;
-	bool hidden;
-};
-
-static struct kparser_cli_ops cli_ops[] = {
+struct kparser_cli_ops cli_ops[] = {
 	{
 		.op_name = "create",
 		.op = op_create,
@@ -1515,13 +1518,12 @@ static struct kparser_cli_ops cli_ops[] = {
 		.op = op_read,
 		.description = "read an object",
 	},
-#if 0
 	{
 		.op_name = "update",
 		.op = op_update,
 		.description = "modify an object",
+		.hidden = true,
 	},
-#endif
 	{
 		.op_name = "delete",
 		.op = op_delete,
@@ -2036,6 +2038,8 @@ int do_kparser(int argc, char **argv)
 		}
 
 		if (keymatches(argv[argidx], cli_ops[i].op_name) == 0) {
+			if (cli_ops[i].hidden)
+				break;
 			argidx++;
 			return __do_cli(cli_ops[i].op, argc, &argidx,
 				      (const char **) argv);

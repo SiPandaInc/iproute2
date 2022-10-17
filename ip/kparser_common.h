@@ -75,6 +75,15 @@ enum kparser_print_id {
 	KPARSER_PRINT_HEX,
 };
 
+struct kparser_cli_ops {
+	int op;
+	const char *op_name;
+	const char *description;
+	bool hidden;
+};
+
+extern struct kparser_cli_ops cli_ops[];
+
 enum {
 	op_create = 0,
 	op_read,

@@ -2036,12 +2036,27 @@ static const struct kparser_global_namespaces kparser_arg_namespace_parser = {
 			"parser objects", NULL, NULL, NULL),
 };
 
+static inline int lock_unlock_do_cli(int nsid, int op, int argc, int *argidx,
+				     const char **argv, const char *hybrid_token,
+				     const char *tbn, __u16 tbid)
+{
+	if (op != op_lock && op != op_unlock) {
+		fprintf(stderr, "parserlockunlock only supported with lock/unlock operations\n");
+		fprintf(stderr,
+			"provided operation `%s` is unsupported with parserlockunlock\n",
+			cli_ops[op].op_name);
+		return -EINVAL;
+	}
+
+	return do_cli(nsid, op, argc, argidx, argv, hybrid_token, true, true);
+}
+
 static const struct kparser_global_namespaces
 kparser_arg_namespace_parser_lock_unlock = {
 	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_OP_PARSER_LOCK_UNLOCK,
 			"parserlockunlock", parser_lock_unlock_key_vals,
-			"lock/unlock a parser object using key", NULL, NULL,
-			NULL),
+			"lock/unlock a parser object using key, it makes that parser immutable",
+			lock_unlock_do_cli, NULL, NULL),
 };
 
 const struct kparser_global_namespaces *g_namespaces[] = {
