@@ -648,7 +648,7 @@ static const struct kparser_arg_key_val_token mdl_key_vals[] = {
 		.w_offset = offsetof(struct kparser_conf_cmd,
 				mdl_conf.metadata_keys),
 		.w_len = sizeof(((struct kparser_hkey *) NULL)->id),
-		.key_name = "md.rule-id",
+		.key_name = "md-rule-id",
 		.help_msg = "associated metadata object's id",
 	},
 	[3] {
@@ -661,7 +661,7 @@ static const struct kparser_arg_key_val_token mdl_key_vals[] = {
 		.w_offset = offsetof(struct kparser_conf_cmd,
 				mdl_conf.metadata_keys),
 		.w_len = sizeof(((struct kparser_hkey *) NULL)->name),
-		.key_name = "md.rule",
+		.key_name = "md-rule",
 		.offset_adjust = sizeof(((struct kparser_hkey *) NULL)->id),
 		.help_msg = "associated metadata object's name",
 	},
@@ -742,7 +742,7 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] = {
 			0, 0xffffffff, -12,
 			"Code to return for a miss on the protocol table and "
 			"the wildcard node is not set"),
-	KPARSER_ARG_HKEY("md.ruleset", "md.ruleset-id",
+	KPARSER_ARG_HKEY("md-ruleset", "md-ruleset-id",
 			PLAIN_NODE.metadata_table_key,
 			"Table of parameterized metadata operations"),
 
@@ -752,46 +752,50 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] = {
 	KPARSER_ARG_U(64, "min-hdr-length", PLAIN_NODE.proto_node.min_len,
 			0, 0xffff, 0, "Minimum length of the protocol header"),
 
-#define HDR_LEN_FIELD_OFF_KEY "hdr.len.field-off"
+#define HDR_LEN_FIELD_OFF_KEY "hdr.len-field-off"
 	KPARSER_ARG_U(16, HDR_LEN_FIELD_OFF_KEY,
 			PLAIN_NODE.proto_node.ops.pflen.src_off,
 			0, 0xffff, 0,
 			"relative start offset of this protocol header after "
 			"the previous header ends"),
 
-#define HDR_LEN_FIELD_LEN_KEY "hdr.len.field-len"
+#define HDR_LEN_FIELD_LEN_KEY "hdr.len-field-len"
 	KPARSER_ARG_U(8, HDR_LEN_FIELD_LEN_KEY,
 			PLAIN_NODE.proto_node.ops.pflen.size,
 			0, 4, 0, "this protocol header's length field's "
 			"size in bytes"),
-	KPARSER_ARG_BOOL("hdr.len.endian",
+	KPARSER_ARG_BOOL("hdr.len-field-endian",
 			PLAIN_NODE.proto_node.ops.pflen.endian, false,
 			"Set this field if host byte order conversion is needed "
 			"to calculate the header length"),
 
-#define HDR_LEN_MASK_KEY "hdr.len.mask"
+#define HDR_LEN_MASK_KEY "hdr.len-field-mask"
 	KPARSER_ARG_U_HEX(32, HDR_LEN_MASK_KEY,
 			PLAIN_NODE.proto_node.ops.pflen.mask,
 			0, KPARSER_DEFAULT_U32_MASK, KPARSER_DEFAULT_U32_MASK,
 			"mask to extract the header length value"),
 
-#define HDR_LEN_RSHIFT_KEY "hdr.len.rightshift"
+#define HDR_LEN_RSHIFT_KEY "hdr.len-field-rightshift"
 	KPARSER_ARG_U(8, HDR_LEN_RSHIFT_KEY,
 			PLAIN_NODE.proto_node.ops.pflen.right_shift,
 			0, 0xff, 0, "number of bits to shift right to extract "
 			"the header length value"),
-	KPARSER_ARG_U(8, "hdr.len.multiplier",
+	KPARSER_ARG_U(8, "hdr.len-field-multiplier",
 			PLAIN_NODE.proto_node.ops.pflen.multiplier,
 			0, 0xff, 1, "constant multiplier to calculate final "
 			"header length in bytes"),
-#define HDR_LEN_ADDVAL_KEY "hdr.len.addvalue"
+#define HDR_LEN_ADDVAL_KEY "hdr.len-field-addvalue"
 	KPARSER_ARG_U(8, HDR_LEN_ADDVAL_KEY,
 			PLAIN_NODE.proto_node.ops.pflen.add_value,
 			0, 0xff, 0, "constant value to be added with extracted "
 			"header length to calculate final length"),
 
+	#define NXT_TABLE_NAME "nxt.table"
+	#define NXT_TABLE_ID "nxt.table-id"
+	#define NXT_TABLE_ENT "nxt.table-ent"
+
 	// paramdds for plain parse node ends
-	KPARSER_ARG_HKEY("nxt.table", "nxt.table-id",
+	KPARSER_ARG_HKEY(NXT_TABLE_NAME, NXT_TABLE_ID,
 			PLAIN_NODE.proto_table_key,
 			"associated protocol table's name or id"),
 	KPARSER_ARG_HKEY("nxt.wildcardparsenode", "nxt.wildcardparsenode-id",
@@ -881,7 +885,7 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] = {
 			TLVS_NODE.proto_node.ops.pflen.multiplier,
 			0, 0xff, 1, "constant multiplier to calculate final "
 			"tlv length in bytes"),
-	KPARSER_ARG_U(8, "tlvs.hdr.len.addvalue",
+	KPARSER_ARG_U(8, "tlvs.hdr-len-field-addvalue",
 			TLVS_NODE.proto_node.ops.pflen.add_value,
 			0, 0xff, 0, "constant value to be added with extracted "
 			"tlv length to calculate final length "),
@@ -1103,7 +1107,7 @@ static const struct kparser_arg_key_val_token tlv_parse_node_key_vals[] = {
 			"overlay_wildcard_parse_node-id",
 			tlv_node_conf.overlay_wildcard_parse_node_key,
 			"<TODO>"),
-	KPARSER_ARG_HKEY("md.ruleset", "md.ruleset-id",
+	KPARSER_ARG_HKEY("md-ruleset", "md-ruleset-id",
 			tlv_node_conf.metadata_table_key,
 			"<TODO>"),
 };
@@ -1216,7 +1220,7 @@ flag_field_node_parse_key_vals[] = {
 				flag_field_node_conf.key.id),
 	},
 
-	KPARSER_ARG_HKEY("md.ruleset", "md.ruleset-id",
+	KPARSER_ARG_HKEY("md-ruleset", "md-ruleset-id",
 			flag_field_node_conf.metadata_table_key,
 			"Table of parameterized metadata operations"),
 	KPARSER_ARG_HKEY("condexprstable", "condexprstable-id",
@@ -1471,6 +1475,10 @@ static const struct kparser_cmd_args_ns_aliases md_aliases = {
 		.keyname = "md-off",
 		.aliases[0] = "doff"
 	},
+	.keyaliases[2] = {
+		.keyname = "hdr-src-off",
+		.aliases[0] = "src-hdr-off"
+	},
 };
 
 static const struct kparser_global_namespaces kparser_arg_namespace_metadata = {
@@ -1487,7 +1495,7 @@ static const struct kparser_cmd_args_ns_aliases mdl_aliases = {
 		.aliases[0] = "metalist"
 	},
 	.keyaliases[1] = {
-		.keyname = "md.rule",
+		.keyname = "md-rule",
 		.aliases[0] = "md-rule",
 		.aliases[1] = "metadata"
 	},
@@ -1537,7 +1545,7 @@ static inline int node_do_cli(int nsid,
 
 	if (strlen(autogenname) != 0) {
 		undesired_arg_enforce = false;
-		newargv[argc++] = strdupa("md.ruleset");
+		newargv[argc++] = strdupa("md-ruleset");
 		newargv[argc++] = strdupa(autogenname);
 	}
 
@@ -1551,7 +1559,7 @@ static inline int node_do_cli(int nsid,
 	}
 	if (strlen(autogenname) != 0) {
 		undesired_arg_enforce = false;
-		newargv[argc++] = strdupa("nxt.table");
+		newargv[argc++] = strdupa(NXT_TABLE_NAME);
 		newargv[argc++] = strdupa(autogenname);
 	}
 
@@ -1884,23 +1892,23 @@ static const struct kparser_cmd_args_ns_aliases node_aliases = {
 		.aliases[0] = "nxt.length",
 	},
 	.keyaliases[4] = {
-		.keyname = "hdr.len.field-off",
+		.keyname = "hdr.len-field-off",
 		.aliases[0] = "hdr.lenoff",
 	},
 	.keyaliases[5] = {
-		.keyname = "hdr.len.field-len",
+		.keyname = "hdr.len-field-len",
 		.aliases[0] = "hdr.lenlen",
 	},
 	.keyaliases[6] = {
-		.keyname = "hdr.len.mask",
+		.keyname = "hdr.len-field-mask",
 		.aliases[0] = "hdr.lenmask",
 	},
 	.keyaliases[7] = {
-		.keyname = "hdr.len.multiplier",
+		.keyname = "hdr.len-field-multiplier",
 		.aliases[0] = "hdr.lenmultiplier",
 	},
 	.keyaliases[8] = {
-		.keyname = "md.ruleset",
+		.keyname = "md-ruleset",
 		.aliases[0] = "metalist",
 	},
 };
@@ -2031,9 +2039,22 @@ kparser_arg_namespace_flag_field_proto_table = {
 			NULL, flags_proto_table_post_handler, NULL),
 };
 
+static const struct kparser_cmd_args_ns_aliases parser_aliases = {
+	.nsid = KPARSER_NS_PARSER,
+	// 0th index is special for namespace name map
+	.keyaliases[0] = {
+		.keyname = "parser",
+		.aliases[0] = "parser"
+	},
+	.keyaliases[1] = {
+		.keyname = "metametasize",
+		.aliases[0] = "base-metametadata-size"
+	},
+};
+
 static const struct kparser_global_namespaces kparser_arg_namespace_parser = {
 	DEFINE_NAMESPACE_MEMBERS(KPARSER_NS_PARSER, "parser", parser_key_vals,
-			"parser objects", NULL, NULL, NULL),
+			"parser objects", NULL, NULL, &parser_aliases),
 };
 
 static inline int lock_unlock_do_cli(int nsid, int op, int argc, int *argidx,
@@ -2109,16 +2130,17 @@ static inline int node_do_cli_table(int nsid,
 	if (op != op_create)
 		return 0;
 
-	currargidx = check_key(argc, argv, "nxt.tableent");
+	currargidx = check_key(argc, argv, NXT_TABLE_ENT);
 	if (currargidx == -1)
 		return 0;
 
-	if (check_key(argc, argv, "nxt.table") != -1) {
-		/* in case inline nxt.tableent is configured, nxt.table can
+	if (check_key(argc, argv, NXT_TABLE_NAME) != -1) {
+		/* in case inline NXT_TABLE_ENT is configured, NXT_TABLE_NAME can
 		 * not be specified here.
 		 */
-		fprintf(stderr, "key `nxt.tableent` can not be used "
-			"with key `nxt.table` for parse node config cmd.\n");
+		fprintf(stderr, "key `%s` can not be used "
+			"with key `%s` for parse node config cmd.\n",
+			NXT_TABLE_ENT, NXT_TABLE_NAME);
 		return -EINVAL;
 	}
 
@@ -2144,7 +2166,7 @@ static inline int node_do_cli_table(int nsid,
 
 	j = 0;
 	while (1) {
-		currargidx = check_key_idx(argc, j, argv, "nxt.tableent");
+		currargidx = check_key_idx(argc, j, argv, NXT_TABLE_ENT);
 		if (currargidx == -1)
 			break;
 		j = currargidx + 2;
@@ -2186,23 +2208,23 @@ static inline int node_do_cli_metalist(int nsid,
 	if (op != op_create)
 		return 0;
 
-	currargidx = check_key(argc, argv, "md.rule");
+	currargidx = check_key(argc, argv, "md-rule");
 	if (currargidx == -1) {
-		currargidx = check_key(argc, argv, "md.rule-id");
+		currargidx = check_key(argc, argv, "md-rule-id");
 		if (currargidx == -1)
 			return 0;
 	}
 
-	if ((check_key(argc, argv, "md.ruleset") != -1) || (check_key(argc,
-					argv, "md.ruleset-id") != -1)) {
-		/* in case inline md.rule is configured, md.ruleset can not be
+	if ((check_key(argc, argv, "md-ruleset") != -1) || (check_key(argc,
+					argv, "md-ruleset-id") != -1)) {
+		/* in case inline md-rule is configured, md-ruleset can not be
 		 * specified here.
 		 */
-		fprintf(stderr, "key `md.ruleset`\\`md.ruleset-id` can not be "
-			"used with key `md.rule` for parse node config cmd.\n");
+		fprintf(stderr, "key `md-ruleset`\\`md-ruleset-id` can not be "
+			"used with key `md-rule` for parse node config cmd.\n");
 		return -EINVAL;
 	}
-	// autogen md.ruleset name, i.e. mdl.auto.<objname>
+	// autogen md-ruleset name, i.e. mdl.auto.<objname>
 	currargidx = check_key(argc, argv, "name");
 	sprintf(autogenname, "mdl.auto.%s", argv[currargidx+1]);
 
@@ -2307,11 +2329,11 @@ static inline int flagfields_do_cli(int nsid,
 	}
 
 	/* Now expect all the params needed to
-	 *	2. create a flagsnode if md.ruleset/md.ruleset-id
+	 *	2. create a flagsnode if md-ruleset/md-ruleset-id
 		   or both/flagsnode.name/flagsnode.id is present.
 	 *	   If flagsnode.name/flagsnode.id not present, autogen the name .
 	 *         by prepending "flagsnode."to flagfields name.
-	 *	   e.g. create flagsnode name flagsnode.gre md.ruleset
+	 *	   e.g. create flagsnode name flagsnode.gre md-ruleset
 	 *		ml.gre.seqno
 	 *	3. if above case is true, create a flagstable with that node
 	 *	   e.g. create flagstable name flagstable.gre
@@ -2321,11 +2343,11 @@ static inline int flagfields_do_cli(int nsid,
 	 */
 	flagname = NULL;
 	flagid = NULL;
-	currargidx = check_key(argc, argv, "md.ruleset");
+	currargidx = check_key(argc, argv, "md-ruleset");
 	if (currargidx != -1)
 		flagname = argv[currargidx+1];
 	else {
-		currargidx = check_key(argc, argv, "md.ruleset-id");
+		currargidx = check_key(argc, argv, "md-ruleset-id");
 		if (currargidx != -1)
 			flagid = argv[currargidx+1];
 	}
