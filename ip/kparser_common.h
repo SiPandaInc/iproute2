@@ -181,4 +181,8 @@ struct kparser_arg_key_val_token {
 	bool id;
 };
 
+#define kparsersetbit(A, k) (A[(k)/BITS_IN_U32] |= (1 << ((k) % BITS_IN_U32)))
+#define kparserclearbit(A, k) (A[(k)/BITS_IN_U32] &= ~(1 << ((k) % BITS_IN_U32)))
+#define kparsertestbit(A, k) (1 & (A[(k)/BITS_IN_U32] >> ((k) % BITS_IN_U32)))
+
 #endif /* _KPARSER_COMMON_H */
