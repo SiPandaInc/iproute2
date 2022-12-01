@@ -103,14 +103,6 @@
             "md-off": 20,
             "hdr-src-off": 12,
             "length": 8
-          },
-          {
-            "name": "ihl",
-            "type": "nibb_extract",
-            "md-off": 16,
-            "hdr-src-off": 0,
-            "nibb-length": 1,
-            "nibb-odd": true
           }
         ]
       }
@@ -216,12 +208,12 @@
         "eol": 1,
         "start-offset": 20,
         "tlv-type": {
-          "offset": 0,
-          "length": 1
+          "field-off": 0,
+          "field-len": 1
         },
         "tlv-length": {
-          "offset": 1,
-          "length": 1,
+          "field-off": 1,
+          "field-len": 1,
           "add": 2
         },
         "ents": [

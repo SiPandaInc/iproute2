@@ -137,6 +137,20 @@ def add_table_to_list(table, name):
 	table_list[name] = { "table": table, "id": table_id }
 	table_id += 1
 
+# List of tables (protocol table and TLV tables, but not flag fields tables
+tlv_table_list = {}
+tlv_table_id = 0x600
+
+def add_tlv_table_to_list(table, name):
+	global tlv_table_list
+	global tlv_table_id
+
+	check_list_not_exist(name, tlv_table_list,
+		"%s already in tlv table list" % name)
+
+	tlv_table_list[name] = { "table": table, "id": table_id }
+	tlv_table_id += 1
+
 # List of flag fields tables
 flag_fields_list = {}
 flag_fields_id = 0x800
@@ -368,6 +382,11 @@ def output_ipcmd_metadata():
 				outputnl(" type counter-mode counteridx %s counterop %s " %
 						(instance['counteridx'], instance['counterop']))
 				continue
+			elif type == 'counter':
+				check_exist('counter', instance,
+							"'counter' metadata must contain 'counter'")
+
+				output(" type counter counterdata %s" % instance['counter'])
 			else:
 				# Need to add other types of metadata
 				err("Unknown metadata type %s" % type)
@@ -424,6 +443,23 @@ def output_ipcmd_tables():
 		outputnl("")
 	outputnl("")
 
+# Output ipcmd commands to create create tlv tables. Read the global list of
+# tlv tables and and output a create tlvtable command for each entry
+def output_ipcmd_tlv_tables():
+	global tlv_table_list
+
+	if tlv_table_list == {}:
+		return
+
+	outputnl("# Create tlv tables")
+
+	for tlv_table_name in tlv_table_list:
+		id = tlv_table_list[tlv_table_name]['id']
+		table = tlv_table_list[tlv_table_name]['table']
+		output("ipcmd parser create tlvtable name %s" % tlv_table_name)
+		outputnl("")
+	outputnl("")
+
 # Output ipcmd commands to create flagfields tables. Read the global list of
 # flag fields and and output a create flagfields command for each entry
 def output_ipcmd_flag_fields_tables():
@@ -473,6 +509,32 @@ def output_ipcmd_table_ents():
 
 			outputnl("")
 			#cnt += 1
+	outputnl("")
+
+# Output ipcmd commands to create tlv table entries. Read the global list of
+# tlv tables and for each table do a create table/... command to add an entry
+# to the table
+def output_ipcmd_tlv_table_ents():
+	global tlv_table_list
+
+	if tlv_table_list == {}:
+		return
+
+	outputnl("# Create tlv table entries")
+
+	for tlv_table_name in tlv_table_list:
+		table = tlv_table_list[tlv_table_name]['table']['ents']
+
+		for entry in table:
+			check_exist('key', entry, "'key' must be defined for "
+				    "entry in tlv table %s" % tlv_table_name)
+			check_exist('node', entry, "'node' must be defined for "
+				    "entry in tlv table %s" % tlv_table_name)
+			output("ipcmd parser create tlvtable/%s" %
+			       (tlv_table_name))
+			output(" tlvtype %s tlvnode %s" %
+			         (entry['key'], entry['node']))
+			outputnl("")
 	outputnl("")
 
 # Output ipcmd commands to create flag_fields entries. Read the global list of
@@ -556,11 +618,11 @@ def output_ipcmd_node_tlv_node(tlv_parse_node, node_name):
 		err("No ents or table in TLV parse node for %s" % node_name)
 		sys.exit()
 
-	check_exist(table_name, table_list,
+	check_exist(table_name, tlv_table_list,
 		    "Cannot find table %s for TLV parse node " \
 		    "%s" % (table_name, node_name))
 
-	table_id = table_list[table_name]['id']
+	table_id = tlv_table_list[table_name]['id']
 
 	output(" tlvs.table 0x%x" % table_id)
 
@@ -604,8 +666,11 @@ def output_ipcmd_node_tlv_node(tlv_parse_node, node_name):
 		    "tlv-type in tlv-parse-node in %s" % node_name)
 	output(" tlvs.type.field-off %u tlvs.type.field-len %u" %
 	       (tlv_type['field-off'], tlv_type['field-len']))
+
 	if 'mask' in tlv_type:
 		output(" tlvs.type.mask %s" % tlv_type['mask'])
+	if 'right-shift' in tlv_type:
+		output(" tlvs.type.rightshift %u" % tlv_type['right-shift'])
 
 	check_exist('tlv-length', tlv_parse_node, "'tlv-length' "
 		    "must be defined for tlv-parse-node in %s" % node_name)
@@ -624,6 +689,8 @@ def output_ipcmd_node_tlv_node(tlv_parse_node, node_name):
 		output(" tlvs.len.multiplier %s" % tlv_length['multiplier'])
 	if 'endian-swap' in tlv_length:
 		output(" tlvs.len.host-order-conversion %s" % str(tlv_length['endian-swap']).lower())
+	if 'right-shift' in tlv_length:
+		output(" tlvs.len.rightshift %u" % tlv_length['right-shift'])
 
 	if 'pad1' in tlv_parse_node:
 		output(" tlvs.pad1 %u" % tlv_parse_node['pad1'])
@@ -728,6 +795,8 @@ def output_parse_node(node_name, node, id):
 			output(" hdr.len.multiplier %u" % hdr_length['multiplier'])
 		if 'add' in hdr_length:
 			output(" hdr.len.addvalue %u" % hdr_length['add'])
+		if 'right-shift' in hdr_length:
+			output(" hdr.len.rightshift %u" % hdr_length['right-shift'])
 
 	if 'next-proto' in node: # Non-leaf node
 		next_proto = node['next-proto']
@@ -762,7 +831,11 @@ def output_parse_node(node_name, node, id):
 		if 'default' in next_proto:
 			output(" defaultfail %s" % defaults[next_proto['default']])
 
-	# next node?
+		if 'encap' in next_proto:
+			output(" nxt.encap %s" % str(start_off['encap']).lower())
+
+		if 'right-shift' in next_proto:
+			output(" nxt.rightshift %u" % next_proto['right-shift'])
 
 	if 'tlv-parse-node' in node: # TLVs parse node
 		if 'flag-fields-parse-node' in node:
@@ -807,7 +880,7 @@ def output_ipcmd_parse_nodes():
 # and for each do a create TLV node command
 def output_ipcmd_tlv_nodes():
 	global tlv_node_list
-	global table_list
+	global tlv_table_list
 
 	defaults = {
 			'continue': 'err', # missing?
@@ -840,15 +913,15 @@ def output_ipcmd_tlv_nodes():
 					"for overlay tlv %s" % tlv_node_name)
 			if 'ents' in overlay_tlv:
 				table_name = "%s.tlv_overlay" % tlv_node_name
-			elif 'table' in next_proto:
+			elif 'table' in overlay_tlv:
 				table_name = overlay_tlv['table']
 			else:
 				err("No ents or table in TLV node")
 
-			check_exist(table_name, table_list,
+			check_exist(table_name, tlv_table_list,
 				    "Cannot find table %s for TLV overlay node "
 				    "%s" % (table_name, tlv_node_name))
-			table_id = table_list[table_name]['id']
+			table_id = tlv_table_list[table_name]['id']
 
 			output(" overlay.type.field-off %u overlay.type.field-len %u" %
 				(overlay_tlv['field-off'], overlay_tlv['field-len']))
@@ -862,6 +935,10 @@ def output_ipcmd_tlv_nodes():
 
 			if 'default' in overlay_tlv:
 				output(" defaultfail %s" % defaults[next_proto['default']])
+
+			if 'right-shift' in overlay_tlv:
+				output(" overlay.type.rightshift %u" %
+						overlay_tlv['right-shift'])
 
 		if 'metadata' in tlv_node:
 			output_ipcmd_node_metadata(tlv_node['metadata'],
@@ -1093,6 +1170,21 @@ def preprocess_proto_tables(data):
 			    "defined for proto-table %s" % proto_table_name)
 		add_table_to_list(proto_table, proto_table_name)
 
+# Create a list of protocol tables for 'protocol_tables' top level property
+def preprocess_tlv_tables(data):
+	if 'tlv-tables' not in data:
+		return
+
+	tlv_tables = data['tlv-tables']
+
+	for tlv_table in tlv_tables:
+		check_exist('name', tlv_table, "'name' must be "
+			    "defined for tlv-table")
+		tlv_table_name = tlv_table['name']
+		check_exist('ents', tlv_table, "'ents' must be "
+			    "defined for tlv-table %s" % tlv_table_name)
+		add_tlv_table_to_list(tlv_table, tlv_table_name)
+
 # Preprocess the parse nodes
 def preprocess_parse_nodes(data):
 	check_exist('parse-nodes', data,
@@ -1128,7 +1220,7 @@ def preprocess_parse_nodes(data):
 				# Add embedded TLV table to protocol tables
 				# list
 				table_name = "%s.tlv_table" % parse_node_name
-				add_table_to_list(tlv_parse_node, table_name)
+				add_tlv_table_to_list(tlv_parse_node, table_name)
 
 		if 'flag-fields-parse-node' in parse_node:
 			flag_fields_parse_node = parse_node[
@@ -1224,7 +1316,7 @@ def preprocess_tlv_nodes(tlv_nodes):
 			overlay_tlv = tlv_node['overlay-node']
 			if 'ents' in overlay_tlv:
 				table_name = "%s.tlv_overlay" % tlv_node_name
-				add_table_to_list(overlay_tlv, table_name)
+				add_tlv_table_to_list(overlay_tlv, table_name)
 
 		if 'metadata' in tlv_node:
 			metadata = tlv_node['metadata']
@@ -1329,6 +1421,7 @@ preprocess_cond_exprs_list(data)
 preprocess_parsers(data)
 preprocess_parse_nodes(data)
 preprocess_proto_tables(data)
+preprocess_tlv_tables(data)
 preprocess_tlv_nodes(data)
 preprocess_flag_fields_nodes(data)
 preprocess_flag_fields(data)
@@ -1336,11 +1429,13 @@ preprocess_flag_fields(data)
 output_ipcmd_metadata()
 output_ipcmd_cond_exprs()
 output_ipcmd_tables()
+output_ipcmd_tlv_tables()
 output_ipcmd_flag_fields_tables()
 output_ipcmd_parse_nodes()
 output_ipcmd_tlv_nodes()
 output_ipcmd_flag_fields_nodes()
 output_ipcmd_table_ents()
+output_ipcmd_tlv_table_ents()
 output_ipcmd_flag_fields()
 output_ipcmd_parsers()
 

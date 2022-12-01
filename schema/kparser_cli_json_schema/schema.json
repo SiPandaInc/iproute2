@@ -42,6 +42,27 @@
         }
       }
     },
+    "inline_tlv_table": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "key",
+          "node"
+        ],
+        "properties": {
+          "key": {
+            "title": "Key",
+            "$ref": "#/$defs/key"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string",
+            "pattern": "^.*$"
+          }
+        }
+      }
+    },
     "inline_flags_table": {
       "type": "array",
       "items": {
@@ -57,6 +78,10 @@
           "field-len": {
             "type": "integer",
             "default": 2
+          },
+          "mask": {
+            "title": "Mask",
+            "$ref": "#/$defs/mask"
           }
         },
         "anyOf": [
@@ -142,55 +167,6 @@
         }
       }
     },
-    "nibb_extract_metadata": {
-      "type": "object",
-      "required": [
-        "type",
-        "hdr-src-off",
-        "md-off"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "name": {
-          "title": "Name",
-          "type": "string",
-          "pattern": "^.*$"
-        },
-        "type": {
-          "title": "Type",
-          "type": "string",
-          "const": "nibb_extract"
-        },
-        "nibb-length": {
-          "title": "Length",
-          "type": "integer",
-          "default": 2
-        },
-        "is-frame": {
-          "title": "Is_frame",
-          "type": "boolean",
-          "default": false
-        },
-        "hdr-src-off": {
-          "title": "Hdr_src_off",
-          "type": "integer"
-        },
-        "md-off": {
-          "title": "Md_off",
-          "type": "integer"
-        },
-        "nibb-odd": {
-            "title": "Nibb_odd",
-            "type": "boolean",
-            "default": false
-        },
-        "index": {
-          "type": "string",
-          "pattern": "^.*$"
-        }
-
-      }
-    },
     "constant_metadata": {
       "type": "object",
       "required": [
@@ -238,10 +214,8 @@
       "type": "object",
       "required": [
         "type",
-        "value",
         "md-off"
       ],
-      "additionalProperties": false,
       "properties": {
         "name": {
           "title": "Name",
@@ -256,7 +230,8 @@
             "num_encaps",
             "num_nodes",
             "timestamp",
-            "return_code"
+            "return_code",
+            "counter"
           ]
         },
         "is-frame": {
@@ -276,6 +251,23 @@
         "index": {
           "type": "string",
           "pattern": "^.*$"
+        }
+      },
+      "if": {
+        "properties": {
+          "type": {
+            "const": "counter"
+          }
+        }
+      },
+      "then": {
+        "required": [ "counter" ],
+        "properties": {
+          "counter": {
+            "title": "Counter",
+            "type": "string",
+            "pattern": "^.+$"
+          }
         }
       }
     },
@@ -301,7 +293,6 @@
                 "oneOf": [
                   { "$ref": "#/$defs/extract_metadata" },
                   { "$ref": "#/$defs/constant_metadata" },
-                  { "$ref": "#/$defs/nibb_extract_metadata" },
                   { "$ref": "#/$defs/value_metadata" }
                 ]
               }
@@ -323,6 +314,11 @@
         "value"
       ],
       "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string",
+          "pattern": "^.*$"
+        },
         "type": {
           "title": "Type",
           "type": "string",
@@ -355,11 +351,22 @@
         "ents"
       ],
       "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string",
+          "pattern": "^.*$"
+        },
         "type": {
           "title": "Type",
           "type": "string",
           "pattern": "^(and)|(or)$",
           "default": "or"
+        },
+        "default-fail": {
+          "title": "Default_fail",
+          "type": "string",
+          "pattern": "^stop_(okay|fail|node|sub)$",
+          "default": "stop_fail"
         },
         "ents": {
           "title": "Ents",
@@ -616,6 +623,10 @@
               "type": "integer",
               "default": 1,
               "multipleOf": 2
+            },
+            "right-shift": {
+              "title": "Right_shift",
+              "type": "integer"
             }
           }
         },
@@ -666,6 +677,14 @@
               "type": "string",
               "pattern": "^.*$"
             },
+            "encap": {
+              "title": "Encap",
+              "type": "boolean"
+            },
+            "right-shift": {
+              "title": "Right_shift",
+              "type": "integer"
+            },
             "table": {
               "title": "Table",
               "type": "string",
@@ -713,6 +732,10 @@
                   "$id": "#root/parse-nodes/items/tlv-parse-node/tlv-type/mask",
                   "title": "Mask",
                   "$ref": "#/$defs/mask"
+                },
+                "right-shift": {
+                  "title": "Right_shift",
+                  "type": "integer"
                 }
               }
             },
@@ -752,6 +775,15 @@
                   "type": "integer",
                   "default": 1,
                   "multipleOf": 2
+                },
+                "endian-swap": {
+                  "title": "Endian_swap",
+                  "type": "boolean",
+                  "default": false
+                },
+                "right-shift": {
+                  "title": "Right_shift",
+                  "type": "integer"
                 }
               }
             },
@@ -862,7 +894,7 @@
             },
             "ents": {
               "$id": "#root/parse-nodes/items/tlv-parse-node/ents",
-              "$ref": "#/$defs/inline_table"
+              "$ref": "#/$defs/inline_tlv_table"
             },
             "max-tlvs": {
               "$id": "#root/parse-nodes/items/flag-fields-parse-node/max-tlvs",
@@ -931,7 +963,7 @@
               "$ref": "#/$defs/mask"
             },
             "default": {
-              "$id": "#root/parse-nodes/items/tlv-parse-node/default",
+              "$id": "#root/parse-nodes/items/flag-fields-parse-node/default",
               "title": "default",
               "type": "string",
               "enum": [
@@ -944,6 +976,52 @@
                 "stop_fail"
               ],
               "default": "continue"
+            },
+            "fields-start-offset": {
+              "$id": "#root/parse-nodes/items/flag-fields-parse-node/fields-start-offset",
+              "title": "Fields_start_offset",
+              "type": "object",
+              "properties":{
+                "field-off": {
+                  "$id": "#root/parse-nodes/items/flag-fields-parse-node/fields-start-offset/field-off",
+                  "title": "Offset",
+                  "type": "integer"
+                },
+                "field-len": {
+                  "$id": "#root/parse-nodes/items/flag-fields-parse-node/fields-start-offset/field-len",
+                  "title": "Length",
+                  "type": "integer"
+                },
+                "endian-swap": {
+                  "$id": "#root/parse-nodes/items/flag-fields-parse-node/fields-start-offset/endian-swap",
+                  "title": "Endian_swap",
+                  "type": "boolean",
+                  "default": false
+                },
+                "mask": {
+                  "$id": "#root/parse-nodes/items/flag-fields-parse-node/fields-start-offset/mask",
+                  "title": "Mask",
+                  "$ref": "#/$defs/mask"
+                },
+                "right-shift": {
+                  "$id": "#root/parse-nodes/items/flag-fields-parse-node/fields-start-offset/right-shift",
+                  "title": "Right_shift",
+                  "type": "integer"
+                },
+                "add": {
+                  "$id": "#root/parse-nodes/items/flag-fields-parse-node/fields-start-offset/add",
+                  "title": "Add",
+                  "type": "integer",
+                  "default": 0
+                },
+                "multiplier": {
+                  "$id": "#root/parse-nodes/items/flag-fields-parse-node/fields-start-offset/multiplier",
+                  "title": "Multiplier",
+                  "type": "integer",
+                  "default": 1,
+                  "multipleOf": 2
+                }
+              }
             },
             "table": {
               "$id": "#root/parse-nodes/items/flag-fields-parse-node/table",
@@ -993,6 +1071,34 @@
             "$id": "#root/proto-tables/items/ents",
             "title": "Ents",
             "$ref": "#/$defs/inline_table"
+          }
+        }
+      }
+    },
+    "tlv-tables": {
+      "$id": "#root/tlv-tables",
+      "title": "Proto_tables",
+      "type": "array",
+      "items": {
+        "$id": "#root/tlv-tables/items",
+        "title": "Items",
+        "type": "object",
+        "required": [
+          "name",
+          "ents"
+        ],
+        "properties": {
+          "name": {
+            "$id": "#root/tlv-tables/items/name",
+            "title": "Name",
+            "type": "string",
+            "default": "",
+            "pattern": "^.*$"
+          },
+          "ents": {
+            "$id": "#root/tlv-tables/items/ents",
+            "title": "Ents",
+            "$ref": "#/$defs/inline_tlv_table"
           }
         }
       }
@@ -1065,6 +1171,10 @@
                 "type": "string",
                 "pattern": "^.*$"
               },
+              "right-shift": {
+                "title": "Right_shift",
+                "type": "integer"
+              },
               "table": {
                 "title": "Table",
                 "type": "string",
@@ -1079,6 +1189,14 @@
               { "required": [ "table" ] },
               { "required": [ "ents" ] }
             ]
+          },
+          "max-len": {
+            "title": "Max_len",
+            "type": "integer"
+          },
+          "is-padding": {
+            "title": "Is_padding",
+            "type": "boolean"
           }
         },
         "allOf": [
@@ -1184,7 +1302,6 @@
               "oneOf": [
                 { "$ref": "#/$defs/extract_metadata" },
                 { "$ref": "#/$defs/constant_metadata" },
-                { "$ref": "#/$defs/nibb_extract_metadata" },
                 { "$ref": "#/$defs/value_metadata" }
               ]
             }
@@ -1212,7 +1329,6 @@
         "oneOf": [
           { "$ref": "#/$defs/extract_metadata" },
           { "$ref": "#/$defs/constant_metadata" },
-          { "$ref": "#/$defs/nibb_extract_metadata" },
           { "$ref": "#/$defs/value_metadata" }
         ]
       }
@@ -1281,6 +1397,11 @@
             "title": "Overwritable",
             "type": "boolean",
             "default": true
+          },
+          "array-limit": {
+            "$id": "#root/counters/items/array_limit",
+            "title": "Array_limit",
+            "type": "integer"
           }
         }
       }
